@@ -1,0 +1,89 @@
+---
+title: "Effects of Alx ablations on behavion"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+# install.packages("ggplot2")
+# install.packages("contrast")
+# install.packages("multcomp")
+# require(ggplot2)
+# install.packages("lme4")
+require(contrast)
+require(multcomp)
+require(nlme)
+library("ggplot2")
+require("lme4")
+```
+
+```{r}
+fileDir = 'S:/Avinash/Papers/2018/Review_round 1/20190201'
+# fileName = 'Alx ablation data from pandas.csv'
+fileName = 'Alx ablation data from pandas_minimal.csv'
+
+df = read.csv(file.path(fileDir,fileName), header = TRUE)
+
+head(df)
+```
+
+```{r}
+df_sub <- subset(df, bendNum == 0)
+# df_sub$ablationBool <- as.factor(df_sub$ablationBool)
+# df_sub$ablationGroup <- as.factor(df_sub$ablationGroup)
+# 
+# lmefit <- lmer(swimDist_total~ ablationBool*ablationGroup + swimType + 1|fishNum, data = df_sub)
+
+lmefit <- lme(swimDist_total~ablationBool*ablationGroup + swimType,data = df_sub, 
+              random = ~1|fishNum)
+
+summary(lmefit)
+
+
+```
+
+
+```{r}
+plot(fitted(lmefit),resid(lmefit))
+
+```
+
+```{r}
+
+df_sub <- subset(df, bendNum == 0 & swimType == 'Scoot')
+# df_sub$ablationBool <- as.factor(df_sub$ablationBool)
+# df_sub$ablationGroup <- as.factor(df_sub$ablationGroup)
+# 
+# lmefit <- lmer(swimDist_total~ ablationBool*ablationGroup + swimType + 1|fishNum, data = df_sub)
+
+lmefit <- lme(swimDist_total~ablationBool*ablationGroup,data = df_sub, random = ~1|fishNum)
+
+summary(lmefit)
+
+```
+
+```{r}
+summary(lmefit)
+# plot(fitted(lmefit),resid(lmefit))
+hist(resid(lmefit), breaks = 50)
+
+```
+
+```{r}
+qqnorm(resid(lmefit))
+```
+
+```{r}
+blah = summary(lmefit)
+blah$contrasts
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
