@@ -1458,7 +1458,7 @@ def radiatingLinesAroundAPoint(pt, lineLength, dTheta = 15, dLine = 1):
         lines.append(line)
     return np.array(lines)          
 
-class Register(object):
+class Register():
     """ 
     Registers an image or image stack to a reference object
     Parameters
@@ -1515,7 +1515,7 @@ class Register(object):
             I = I[np.newaxis,:,:]
             
         if not self.filtSize_ is None:
-            I = volt.img.gaussFilt(I, sigma = 1)
+            I = img.gaussFilt(I, sigma = 1)
         if np.any(ref == None):
             ref = I.mean(axis = 0)
         if self.regMethod_ == 'st':

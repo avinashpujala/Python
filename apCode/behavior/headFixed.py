@@ -7,9 +7,11 @@ Created on Tue Oct  9 15:36:14 2018
 
 import numpy as np
 import dask, os, sys
+import h5py
 sys.path.append(r'v:/code/python/code')
 import apCode.volTools as volt
 from apCode import util
+import apCode.FileTools as ft
 
 def cleanTailAngles(ta,svd, nComps:int = 3, nWaves = 5, dt = 1/1000, lpf = 60):
     """
@@ -241,9 +243,7 @@ def extractAndStoreBehaviorData_singleFish(fishPath, uNet = None, hFilePath=None
         "/behav/tailAngles": array, (nTimePoints, nPointsAlongFish, 2)
             Tangent angles (cumulative curvatures) along the length of the fish.    
     """
-    import re
-    import apCode.FileTools as ft
-    import h5py
+    import re    
     from apCode.machineLearning import ml as mlearn
     import apCode.behavior.headFixed as hf
     from apCode import hdf
@@ -516,14 +516,10 @@ class FishData(object):
         **kwargs:
         q: scalar
             Bottom percentile for computing ratiometric \delta F/F
-        """        
-        import os
+        """ 
         import pandas as pd
-        import numpy as np
-        import apCode.FileTools as ft
         import apCode.behavior.headFixed as hf        
-        from apCode import hdf
-        import h5py        
+        from apCode import hdf     
         try:
             xls = pd.read_excel(self.xlsPath)
         except:
@@ -704,8 +700,7 @@ class FishData(object):
         return self
             
     def open_hdf(self, mode = 'a'):
-        """Returns opened hdf file associated with data"""
-        import h5py
+        """Returns opened hdf file associated with data"""        
         if hasattr(self,'path_hdf'):
             hFile = h5py.File(self.path_hdf, mode = mode)
         else:
@@ -1994,16 +1989,23 @@ def registerTrializedImgStack(I, iCh_ref = 0, nImgs_ref = 40, filtSigma = 3, fil
     I_reg = np.transpose(I_reg,(1,0,*dims[2:]))
     return I_reg, regObj
 
-def register_trialized_volumes_by_slices(images, regMethod = 'cpwr',\
-                                         upsample_factor = 1, filtSize = None,\
-                                         backend = 'dask'):
+def register_trialized_volumes_by_slices(images, filtSize = 1, regMethod = 'cpwr',**kwargs):
     """
     Register image volumes slice-by-slice
     Parameters
     ----------
     images: array, (nTrials, nTimePoints, nSlices, nRows, nCols)
         Image hyperstack to perform registration on.
-    **kwargs: Keyword arguments for apCode.volTools.Register class
+    filtSize: scalar
+        Gaussian filter size (sigma) for smoothing of images prior to registration. The
+        smoothing is only done to compute registration parameters, which are then applied
+        to raw images.
+    regMethod: str
+        Method of registration to use.
+        'cr': Caiman's rigid
+        'cpwr': Caiman's piecewise rigid
+        'st': skimage's register_translation
+    **kwargs: Other keyword arguments for apCode.volTools.Register class
     Returns
     -------
     images_reg: array, same shape as images
@@ -2011,23 +2013,26 @@ def register_trialized_volumes_by_slices(images, regMethod = 'cpwr',\
     regObj: list
         List of registration objects (one for each slice)
     """
-#    import apCode.volTools as volt
     stackDims = images.shape
-    foo = images.reshape(-1, *images.shape[2:])
-    foo = np.swapaxes(foo,0,1)
-    reg = volt.Register(regMethod = regMethod, backend = backend,\
-                        upsample_factor = upsample_factor, filtSize = filtSize)
+    images_ser = images.reshape(-1, *images.shape[2:])
+    images_ser = np.swapaxes(images_ser,0,1)
+    if len(kwargs)>0:
+        reg = volt.Register(filtSize = filtSize, regMethod = regMethod, **kwargs)
+    else:
+        reg = volt.Register(filtSize = filtSize, regMethod = regMethod)
+    
     regObj = []
     images_reg = []
     print('Registering...')
-    for z, frame in enumerate(foo):
-        print(f'Slice {z+1}/{foo.shape[0]}')
+    for z, frame in enumerate(images_ser):
+        print(f'Slice {z+1}/{images_ser.shape[0]}')
         ro = reg.fit(frame)
         regObj.append(ro)
         images_reg.append(ro.transform(frame))
     images_reg = np.swapaxes(np.array(images_reg),0,1)
     images_reg = images_reg.reshape(stackDims)
-    return images_reg, regObj    
+    return images_reg, regObj
+    
 
 def register_volumes_by_slices_and_trials(images, regMethod='cpwr',\
                                           backend='dask', upSample=1,\
@@ -2514,6 +2519,65 @@ def swimEnvelopes_multiLoc(x, n_loc:int = 5, interp_kind:str = 'cubic',\
     features = pd.concat(features, axis = 1, join = 'outer', sort = False)
     return features
 
+def swimEnvelopes_multiLoc_polarized(x, n_loc:int = 5, interp_kind:str = 'cubic',\
+                           triplicate:bool = True):
+    """
+    Given the tail angles array, extracts envelopes for tail angle timeseries
+    at specified number of points along the fish, takes their derivatives and
+    their 2nd derivatives and puts all tis info in a datframe so that they can
+    be used multidimensional features (at each time point) for classification,
+    gaussian mixture modeling, dimensionality reduction, etc.
+    Parameters
+    ----------
+    x: array, (nPointsAlongFish, nTimePoints)
+        Tail angles array (prefereably cleaned with SVD before; see cleanTailAngles)
+    n_loc: int
+        Number of points along fish to use in computing features.
+    interp_kind: str
+        Type of interpolation to use when computing envelopes from tail angle
+        timeseries.
+    triplicate: bool
+        If True, concatenates timeseries back to back to make a triplicate and
+        uses this to compute envelope. Suggested when using "cubic" 
+        interpolation so as to avoid ugly edge effects.
+    Returns
+    -------
+    features: pandas dataframe, (nTimePoints, nFeatures)
+        Pandas dataframe with features as columns.
+    """
+    import numpy as np
+    from apCode.SignalProcessingTools import emd
+    import pandas as pd
+    from collections import OrderedDict
+    if (interp_kind =='cubic') & (not triplicate):
+        print('WARNING!: If using "cubic" interpolation, better to set "triplicate = True"')    
+    posInds = np.linspace(0,x.shape[0]-1,n_loc+1).astype(int)
+    x_sub = np.diff(x[posInds],axis = 0)
+    features = []
+    for iPos, x_ in enumerate(x_sub):
+        e = emd.envelopesAndImf(x_, interp_kind = interp_kind, triplicate=triplicate)
+        crests, troughs = e['env']['crests'], e['env']['troughs']        
+        dx_ = np.gradient(x_)
+        dx_crests = emd.envelopesAndImf(dx_, interp_kind= interp_kind,\
+                                        triplicate=triplicate)['env']['crests']
+        dx_troughs = emd.envelopesAndImf(dx_, interp_kind= interp_kind,\
+                                         triplicate=triplicate)['env']['troughs']
+        ddx_ = np.gradient(dx_)
+        ddx_crests = emd.envelopesAndImf(ddx_, interp_kind=interp_kind,\
+                                         triplicate=triplicate)['env']['crests']
+        ddx_troughs = emd.envelopesAndImf(ddx_, interp_kind=interp_kind,\
+                                          triplicate=triplicate)['env']['troughs']
+        dic = OrderedDict()
+        dic[f'env_crests_pos{iPos}'] =  crests
+        dic[f'env_troughs_pos{iPos}']  = troughs
+        dic[f'env_crests_der1_pos{iPos}'] =  dx_crests
+        dic[f'env_troughs_der1_pos{iPos}']  = dx_troughs
+        dic[f'env_crests_der2_pos{iPos}'] =  ddx_crests 
+        dic[f'env_troughs_der2_pos{iPos}'] = ddx_troughs
+        features.append(pd.DataFrame(data = dic, columns = dic.keys()))
+    features = pd.concat(features, axis = 1, join = 'outer', sort = False)
+    return features
+
 def swimOnAndOffsets(x, thr = 10, minOnDur:int =30, minOffDur:int = 100, 
                      use_emd:bool = True):
     """
@@ -2587,6 +2651,55 @@ def swimOnAndOffsets(x, thr = 10, minOnDur:int =30, minOffDur:int = 100,
         return onOffs_fin            
     else:
         return None         
+
+def tailAngles_from_hdf_concatenated_by_trials(hFileDirs, hFileExt = 'h5',\
+                                               hFileName_prefix = 'procData',\
+                                               key = 'behav/tailAngles', nTailPts = 50):
+    """Given a paths to directories for HDF files storing processed behavior data
+    are located, extracts tail angles and returns in a dictionary
+    Parameters
+    ----------
+    hFileDirs: list or str
+        Path to directory where HDF file with processed data is located or a list
+        of such paths
+    hFileExt: str
+        When locating HDF files in the relevant paths, searches for files with this
+        extension.
+    hFileName_prefix: str
+        When locating HDF files in the relevant paths, searches for files with this
+        prefix in their names.
+    key: str 
+        Path in HDF to tail angles dataset.
+    nTailPts: int
+        Number of points along the tail in each of the tail angle datasets.
+    Returns
+    -------
+    dic: dictionary
+        Dictionary with the following keys
+            hFilePath: list
+                Paths to the relevant HDF files
+            tailAngles: list
+                Tail angles extracted from HDF files and reshaped such that
+                they are concatenated by trials. Each item in the list corresponds
+                to one fish.
+    """
+    if not (isinstance(hFileDirs, list) | isinstance(hFileDirs,np.ndarray)):
+        hFileDirs = [hFileDirs]
+    dic = dict(hFilePath = [], tailAngles = [])
+    for iDir, hfd in enumerate(hFileDirs):
+        hFileName = ft.findAndSortFilesInDir(hfd, ext = hFileExt, search_str = hFileName_prefix)
+        if len(hFileName)>0:
+            hfp = os.path.join(hfd, hFileName[-1])
+            with h5py.File(hfp, mode = 'r') as hFile:
+                if key in hFile:
+                    print(f'{iDir+1}/{len(hFileDirs)}')
+                    ta = np.array(hFile[key])
+                    trlLen = ta.shape[-1]
+                    ta = ta.reshape(-1,nTailPts, ta.shape[-1])
+                    ta_ser = np.concatenate(ta,axis = 1)
+                    dic['hFilePath'].append(hfp)
+                    dic['tailAngles'].append(ta_ser)
+    return dic    
 
 def tailAnglesFromRawImagesUsingUnet(I, uNet, imgExt = 'bmp', filtSize = 2.5, 
                                    smooth = 20, kind = 'cubic', n = 50,
