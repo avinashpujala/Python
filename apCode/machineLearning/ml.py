@@ -7,6 +7,8 @@ Created on Thu Jun  7 14:45:14 2018
 #codeDir = r'c:/users/pujalaa/documents/code/python/code'
 from sklearn.mixture import GaussianMixture as _GMM
 from pathlib import Path
+import dask
+from dask.diagnostics import ProgressBar
 
 def augmentImageData(I_train, I_mask, upsample = 10,\
                      aug_set = ('rn','sig','log','inv','heq','rot', 'et', 'rs')):
@@ -535,10 +537,19 @@ class GMM(_GMM):
         """
         import numpy as np
         from sklearn.mixture import GaussianMixture as GMM
+        def getMetrics(X, GMM, n_components):
+            model = GMM(n_components = n_components).fit(X)
+            return (model.aic(X), model.bic(X))        
         if np.ndim(comps)==0:
             comps = np.arange(comps)+1
-        foo = np.array([(GMM(n_components=comp).fit(X).aic(X), GMM(n_components= comp).fit(X).bic(X)) for comp in comps])
-        ic = {'aic':foo[:,0],'bic':foo[:,1]}
+        metrics = []
+        for iComp, comp in enumerate(comps):
+            print(f'{iComp}/{len(comps)}; comp = {comp}')
+            foo = dask.delayed(getMetrics)(X,GMM,comp)
+            metrics.append(foo)
+        with ProgressBar():
+            metrics = np.array(dask.compute(*metrics))
+        ic = {'aic':metrics[:,0],'bic':metrics[:,1]}
         return ic
     
     def relabel_by_norm(self, labels):
