@@ -13,7 +13,7 @@ import apCode.volTools as volt
 from apCode import util
 import apCode.FileTools as ft
 
-def cleanTailAngles(ta,svd, nComps:int = 3, nWaves = 5, dt = 1/1000, lpf = 60):
+def cleanTailAngles(ta,svd = None, nComps:int = 3, nWaves = 5, dt = 1/1000, lpf = 60):
     """
     Given the array of tail angles along the fish across time, and optionally,
     an svd object (Truncated Singular Value Decomposition from sklearn) fit across
@@ -2331,6 +2331,107 @@ def seeBehavior(eye_imgs, tail_imgs, eye_ts, tail_ts, fps = 30, n_pts = 50,
         return HTML(ani.to_html5_video())
     else:
         return ani 
+
+def see_behavior_with_labels(images, ts, labels = None, fps = 30, display = True,\
+                             save = False, savePath = None, yl = (-150, 150),\
+                                 ms = 20, cmap_lbls= 'nipy_spectral', **kwargs):
+    """
+    Parameters
+    ----------
+    images: array, (nFrames, nRows, nCols)
+        Images to display
+    ts: array, (nFrames[,1])
+        Timeseries to display
+    labels: dict or None
+        'inds': array, (n,), where n <= nFrames
+            Frame indices where to mark timeseries (ts) by label points.
+    fps: int
+        Frames per second for the movie
+    display: bool
+        If True, displays movie
+    save: bool
+        It True, saves movie
+    savePath: str
+        Path to where the movie should be saved
+    yl: array-like, (2,)
+        Y-limits for the timeseries
+    **kwargs:
+        cmap: str, [Default: 'gray']
+            Name of python colormap to use for images.
+        dpi: int, [Default: 70]
+            Dots per inch; movie resolution
+    Returns
+    -------
+    ani: HTML movie object
+        Simply typing ani results in playing of the movie        
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib import animation
+    plt.rcParams['animation.ffmpeg_path'] = r'V:\Code\FFMPEG\bin\ffmpeg.exe'
+    from IPython.display import HTML
+       
+    nFrames = images.shape[0]      
+    cmap = kwargs.get('cmap', 'gray')
+#    interp = kwargs.get('interpolation', 'nearest')
+    dpi = kwargs.get('dpi', 70)
+    plt.style.use(('seaborn-poster', 'seaborn-white'))
+    fh = plt.figure(dpi = dpi)
+    ax = [[]]*2
+    ax[0] = fh.add_axes([0.1, 0.3, 0.65, 0.65])
+    ax[0].set_aspect('equal')
+    ax[0].get_xaxis().set_visible(False)
+    ax[0].get_yaxis().set_visible(False)
+    ax[0].set_frame_on(False)
+    im = ax[0].imshow(images[0], cmap= cmap, vmin = images.min(),\
+                      vmax = images.max())
+    
+    t = np.arange(0,nFrames)
+    ax[1]= fh.add_axes([0, 0, 0.95, 0.29])
+    ax[1].set_frame_on(False)
+    ax[1].plot(t,ts, c = 'k', lw = 0.5)
+    
+    if not labels is None:
+        ax[1].scatter(t[labels['inds']], ts[labels['inds']], c = labels['labels'],\
+                      s= ms, cmap = cmap_lbls)
+    ax[1].get_xaxis().set_visible(False)    
+    ax[1].set_ylabel('Tail angle')
+    ax[1].set_ylim(yl) 
+    ax[1].set_xlim(0, len(ts))
+    
+#    fh.tight_layout()
+    
+    def update_img(n):        
+        im.set_data(images[n])   
+        ax[0].set_title('Frame # {}'.format(n))
+        ax[1].cla()
+        ax[1].plot(t,ts, lw = 1)
+        if not labels is None:
+            ax[1].scatter(t[labels['inds']], ts[labels['inds']], c = labels['labels'],\
+                          s= ms, cmap = cmap_lbls)        
+        if n>0:
+            ax[1].axvline(t[n], ls = '--', c = 'k', lw = 1.5, alpha = 0.5)
+        ax[1].set_xlim(t.min(), t.max())
+        
+    ani = animation.FuncAnimation(fh, update_img,t, interval= fps, repeat = False)    
+    plt.close(fh)
+    
+    if save:
+        print('Saving...')
+        writer = animation.writers['ffmpeg'](fps=fps)
+        if savePath != None:
+            ani.save(savePath, writer = writer, dpi = dpi)
+            print('Saved to \n{}'.format(savePath))
+        else:
+            vidName = f'video_{util.timestamp("m")}.mp4'
+            ani.save(vidName, writer=writer, dpi=dpi)
+            print('Saved in current drive as \n{}'.format(vidName))
+        
+    if display:
+        print('Displaying...')
+        return HTML(ani.to_html5_video())
+    else:
+        return ani 
+
 
 def selectFishImgsForUTest(exptDir, prefFrameRangeInTrl = (115,160),\
                               nImgsForTraining:int = 50):

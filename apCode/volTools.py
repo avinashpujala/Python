@@ -201,7 +201,7 @@ class cv(object):
         # Return the projection matrix, the variance and the mean
         return V, S, mean_X
 
-def dask_array_from_image_sequence(imgDir, ext:str = 'bmp'):
+def dask_array_from_image_sequence(imgDir, ext:str = 'bmp', verbose = 0):
     """
     Returns a lazy dask array of dimensions corresponding to the image
     stack that would have resulted if a sequence of image files within the 
@@ -213,6 +213,8 @@ def dask_array_from_image_sequence(imgDir, ext:str = 'bmp'):
         Path to a directory of images
     ext: str
         File extension of the image files to be mapped to the dask array.
+    verbose: bool
+        If true, prints image dimensions
     Returns
     -------
     imgStack: dask array, ([T,] M, N)
@@ -228,7 +230,8 @@ def dask_array_from_image_sequence(imgDir, ext:str = 'bmp'):
     imgPath = join(imgDir, files[0])
     img = imread(imgPath)
     imgDims = img.shape
-    print(f'Image dimensions: {imgDims}')
+    if verbose:
+        print(f'Image dimensions: {imgDims}')
     images_delayed = [delayed(imread)(join(imgDir,f)) for f in files]
     arr = [da.from_delayed(d, shape = imgDims, dtype = img.dtype) for d in images_delayed]
     arr = da.stack(arr,axis = 0)
