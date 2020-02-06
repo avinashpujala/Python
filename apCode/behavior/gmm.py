@@ -12,9 +12,10 @@ from sklearn.decomposition import TruncatedSVD
 import numpy as np
 import sys
 import dask
+import matplotlib.pyplot as plt
 sys.path.append(r'v:/code/python/code')
-import apCode.behavior.headFixed as hf  # noqa: E402
 import apCode.SignalProcessingTools as spt  # noqa: E402
+from apCode.machineLearning.preprocessing import Scaler  # noqa: E402
 
 
 def max_min_envelopes(x):
@@ -28,211 +29,198 @@ def max_min_envelopes(x):
     return x_env
 
 
-def predict_on_tailAngles(ta, fitter, subSample=1):
-    """
-    Given a tail angles array, returns a feature array that can be directly
-    input to a trained GMM
+class SvdGmm(object):
+    def __init__(self, n_gmm=20, n_svd=3, use_envelopes=True,
+                 scaler_withMean=False, pca_percVar=None, random_state=143,
+                 covariance_type='full', **gmm_kwargs):
+        """Class for fiting Gaussian Mixture Model on SVD-based features
+        extracted from tail angles.
+        Parameters
+        ----------
+        n_svd: int
+            Number of svd components to use in representing tail angles.
+            Empirically, 3 is a good value because it explains ~95% of
+            variance in the data.
+        use_envelopes: bool
+            If True, uses the envelopes (crests and troughs) of the SVD
+            component timeseries for generating features.
+        scaler_withMean: bool
+            If True, computes the mean for the SVD-based features and uses this
+            when scaling, else uses 0 as the mean and scales only using the
+            standard deviation.
+        pca_percVar: float or None
+            If None, then does not perform PCA on SVD-based features to reduce
+            dimensionality. If float, then uses as many PCA compoments as will
+            explain pca_percVar*100 percent of the total variance.
+        random_state: int
+            Random state of the RNGs.
+        """
+        self.n_gmm_ = n_gmm
+        self.n_svd_ = n_svd
+        self.use_envelopes_ = use_envelopes
+        self.scaler_withMean_ = scaler_withMean
+        self.pca_percVar_ = pca_percVar
+        self.random_state_ = random_state
+        self.covariance_type_ = covariance_type
+        self.gmm_kwargs_ = gmm_kwargs
+
+    def fit(self, ta):
+        """Fit model to tail angles. This includes preprocessing wherein
+        SVD-based feature extraction is performed, followed by PCA for
+        dimensionality reduction, if specfied.
+        Parameters
+        ----------
+        self: object
+            Instance of initiated SvdGmm class
+        ta: array, (nPointsAlongTail, nTimePoints)
+            Tail angles array
+        Returns
+        -------
+        self: object
+            Trained SvdGmm model.
+        """
+        svd = TruncatedSVD(n_components=self.n_svd_,
+                           random_state=self.random_state_).fit(ta.T)
+        V = svd.transform(ta.T)
+        dv = np.gradient(V)[0]
+        ddv = np.gradient(dv)[0]
+        X = np.c_[V, dv, ddv]
+        if self.use_envelopes_:
+            features = max_min_envelopes(X.T).T
+        scaler = StandardScaler(with_mean=self.scaler_withMean_).fit(features)
+        features = scaler.transform(features)
+        if self.pca_percVar_ is not None:
+            pca = PCA(n_components=self.pca_percVar_,
+                      random_state=self.random_state_).fit(features)
+            features = pca.transform(features)
+            pca.n_components = features.shape[1]
+        gmm = GMM(n_components=self.n_gmm_, random_state=self.random_state_,
+                  covariance_type=self.covariance_type_, **self.gmm_kwargs_)
+        gmm = gmm.fit(features)
+        self.svd = svd
+        self.scaler = scaler
+        self.pca = pca
+        self.gmm = gmm
+        return self
+
+    def to_features(self, ta):
+        """
+        Given tail angles array, returns svd-based feature array as well as
+        the svd object. The feature array can be used for posture
+        classification by GMM or some other clustering algorithm.
+        Parameters
+        ----------
+        ta: array, (nPointsAlongTail, nTimePoints)
+            Tail angles array
+        Returns
+        -------
+        features: array, (nTimePoints, n_svd*3)
+            SVD-based feature array. In addition to the timeseries of the n_svd
+            components, this array includes upto the 2nd derivative of these
+            timeseries.
+        """
+        V = self.svd.transform(ta.T)
+        dv = np.gradient(V)[0]
+        ddv = np.gradient(dv)[0]
+        features = np.c_[V, dv, ddv]
+        if self.use_envelopes_:
+            features = max_min_envelopes(features.T).T
+        features = self.scaler.transform(features)
+        if self.pca is not None:
+            features = self.pca.transform(features)
+        return features
+
+    def plot_with_labels(self, ta, cmap='tab20', figSize=(60, 10),
+                         marker_size=100, line_alpha=0.2):
+        """Plot tail angles overlaid with labels in different colors
+        and numbers as markers.
+        Parameters
+        ----------
+        ta: array, (nPointsAlongFish, nTimePoints)
+            Tail angles
+        cmap: str or matplotlib.colors.ListedColormap
+            Colormap for plotting marker classes
+        figSize: tuple, (2,)
+            Figure size
+        marker_size: scalar
+            Marker size
+        line_alpha: scalar
+            Alpha value for lineplot of total tail angle timeseseries
+        Returns
+        --------
+        fh: object
+            Figure handle
+        """
+        if isinstance(cmap, str):
+            cmap = eval(f'plt.cm.{cmap}')
+        labels, features = self.predict(ta)
+        labels_all = np.arange(self.n_gmm_)
+        scaler = Scaler(standardize=True).fit(labels_all)
+        labels_norm = scaler.transform(labels)
+        clrs = cmap(labels_norm)
+        fh = plt.figure(figsize=figSize)
+        x = np.arange(ta.shape[1])
+        plt.plot(ta[-1], c='k', alpha=line_alpha)
+        for lbl in np.unique(labels):
+            inds = np.where(labels == lbl)[0]
+            clrs_now = clrs[inds].reshape(-1, 4)
+            plt.scatter(x[inds], ta[-1][inds], c=clrs_now, s=marker_size,
+                        marker=f"${str(lbl)}$")
+        return fh
+
+    def predict(self, ta):
+        """Use trained SvdGmm model to predict labels on an array of tail
+         angles.
+         Parameters
+         ----------
+         self: Trained SvdGMM model object
+         ta: array, (nPointsAlongTail, nTimePoints)
+            Tail angles
+        Returns
+        --------
+        labels: array, (nTimePoints,)
+            Predicted labels.
+        features: array, (nTimePoints, nFeatures)
+            Feature array
+        """
+        features = self.to_features(ta)
+        return self.gmm.predict(features), features
+
+
+def _plot_with_labels(model, ta, cmap='tab20', figSize=(60, 10),
+                      marker_size=100, line_alpha=0.2):
+    """Plot tail angles overlaid with labels in different colors
+    and numbers as markers.
     Parameters
     ----------
-    ta: array, (nTailPoints, nTimePoints)
-        Tail angles array
-    scaler: sklearn StandardScaler object pre-fitted to multi-fish data
-    nKer: int
-        Kernel length in points for convolution of features
-    n_pca: int
-        Number of PCA components to reduce the feature array to
+    ta: array, (nPointsAlongFish, nTimePoints)
+        Tail angles
+    cmap: str or matplotlib.colors.ListedColormap
+        Colormap for plotting marker classes
+    figSize: tuple, (2,)
+        Figure size
+    marker_size: scalar
+        Marker size
+    line_alpha: scalar
+        Alpha value for lineplot of total tail angle timeseseries
     Returns
-    -------
-    labels: array, (nSamples,)
-    X: array, (nSamples, nFeatures)
-        Feature array ready to be fed into a fitted GMM model.
+    --------
+    fh: object
+        Figure handle
     """
-    scaler, pca, gmm, nKer = fitter['scaler'], fitter['pca'], fitter['gmm'],\
-        fitter['nKer']
-
-    df_features = hf.swimEnvelopes_multiLoc(ta)
-    arr_feat = np.array(df_features)
-    arr_feat_scaled = scaler.transform(arr_feat)
-    if nKer is not None:
-        arr_feat_scaled =\
-            [dask.delayed(spt.causalConvWithSemiGauss1d)(x, nKer*2)
-             for x in arr_feat_scaled.T]
-        arr_feat_scaled = np.array(dask.compute(*arr_feat_scaled)).T
-    if pca is not None:
-        X = pca.transform(arr_feat_scaled[::subSample, :])
-    else:
-        X = arr_feat_scaled[::subSample, :]
-    labels = gmm.predict(X)
-    return labels, X
-
-
-def predict_on_tailAngles_svd(ta, fitter, subSample=1):
-    """
-    Given a tail angles array, returns a feature array that can be directly
-    input to a trained GMM
-    Parameters
-    ----------
-    ta: array, (nTailPoints, nTimePoints)
-        Tail angles array
-    scaler: sklearn StandardScaler object pre-fitted to multi-fish data
-    nKer: int
-        Kernel length in points for convolution of features
-    n_pca: int
-        Number of PCA components to reduce the feature array to
-    Returns
-    -------
-    labels: array, (nSamples,)
-    X: array, (nSamples, nFeatures)
-        Feature array ready to be fed into a fitted GMM model.
-    """
-    scaler, svd, gmm = fitter['scaler'], fitter['svd'], fitter['gmm']
-    use_envelopes = fitter['use_envelopes']
-    V = svd.transform(ta.T)
-    dv = np.gradient(V)[0]
-    ddv = np.gradient(dv)[0]
-    X = np.c_[V, dv, ddv]
-    if use_envelopes:
-        X = max_min_envelopes(X.T).T
-    X = scaler.transform(X)
-    labels = gmm.predict(X)
-    return labels, X
-
-
-def tailAngles_to_svd_featureArray(ta, n_svd=3, use_envelopes=True):
-    """
-    Given tail angles array, returns svd-based feature array as well as
-    the svd object. The feature array can be used for posture classification
-    by GMM or some other clustering algorithm
-    Parameters
-    ----------
-    ta: array, (nPointsAlongTail, nTimePoints)
-        Tail angles array
-    n_svd: int
-        Number of SVD components to use. 3 components typically explains > ~95%
-        variance. Test before deciding.
-    Returns
-    -------
-    X_svd: array, (nTimePoints, n_svd*3)
-        SVD-based feature array. In addition to the timeseries of the n_svd
-        components, this array includes upto the 2nd derivative of these
-        timeseries.
-    svd: object
-        Fitted SVD object
-    """
-    svd = TruncatedSVD(n_components=n_svd, random_state=143).fit(ta.T)
-    V = svd.transform(ta.T)
-    dv = np.gradient(V)[0]
-    ddv = np.gradient(dv)[0]
-    X = np.c_[V, dv, ddv]
-    if use_envelopes:
-        X = max_min_envelopes(X.T).T
-    return X, svd
-
-
-def train_on_tailAngles(ta, nKer=None, n_gmm=15, pca_percVar=0.98, subSample=1,
-                        onOffThr=None, scaler_withMean=False):
-    """
-    Given a tail angles array returns fitted scaler, pca and gmm models
-    resulting from the specified input parameters
-    Parameters
-    ----------
-    ta: array, (nTailPoints, nTimePoints)
-        Tail angles array
-    nKer: int
-        Kernel length in points for convolution of features
-    pca_percVar: scalar or None
-        Percent of variance (0 to 1) to be explained by PCA in reducing feature
-        dimensions. If None, skips PCA.
-    onOffThr: scalar
-        Threshold to use on swim envelopes in determining suprathreshold
-        activity.
-        This is used to feed only the suprathreshold activity to PCA and GMM
-        for speeding and other considerations.
-    subSample: int
-        Sub-sampling interval for the feature array. Used to reduce number
-        of samples fed into PCA and GMM for purpose of computational speed.
-    scaler_withMean: boolean
-        If False, then in fitting the scaler, 0 is treated as the mean.
-    Returns
-    -------
-    fitter: dict
-        Dictionary with the following keys
-        scaler, pca, gmm: sklearn objects
-            Fitted StandardScaler, PCA, and GMM model objects.
-        nKer: int
-            Kernel length for convolving feature array during preprocessing.
-    """
-
-    df_features = hf.swimEnvelopes_multiLoc(ta)
-    arr_feat = np.array(df_features)
-
-    scaler = StandardScaler(with_mean=scaler_withMean).fit(arr_feat)
-    arr_feat_scaled = scaler.transform(arr_feat)
-    if nKer is not None:
-        arr_feat_scaled =\
-            [dask.delayed(spt.causalConvWithSemiGauss1d)(x, nKer*2)
-             for x in arr_feat_scaled.T]
-        arr_feat_scaled = np.array(dask.compute(*arr_feat_scaled)).T
-
-    if onOffThr is not None:
-        env_max = spt.emd.envelopesAndImf(ta[-1])['env']['max']
-        inds_supraThresh = np.where(env_max > onOffThr)[0]
-        arr_supra = arr_feat_scaled[inds_supraThresh, :]
-    else:
-        arr_supra = arr_feat_scaled
-
-    X = arr_supra[::subSample, :]
-
-    if pca_percVar is not None:
-        print('Performing PCA to reduce feature dimensions...')
-        pca = PCA(n_components=pca_percVar, random_state=143)
-        X_pca = pca.fit_transform(X)
-        print(f'Reduced features to {pca.n_components_} dimensions')
-    else:
-        pca = None
-        X_pca = X
-
-    print('Fitting GMM...')
-    gmm = GMM(n_components=n_gmm, covariance_type='full').fit(X_pca)
-    fitter = dict(gmm=gmm, pca=pca, scaler=scaler, nKer=nKer)
-    return fitter
-
-
-def train_on_tailAngles_svd(ta, n_gmm=15, n_svd=3, subSample=1,
-                            scaler_withMean=False, use_envelopes=True):
-    """
-    Given a tail angles array returns fitted scaler, pca and gmm models
-    resulting from the specified input parameters
-    Parameters
-    ----------
-    ta: array, (nTailPoints, nTimePoints)
-        Tail angles array
-    n_svd: int
-        Number of svd components
-    subSample: int
-        Sub-sampling interval for the feature array. Used to reduce number
-        of samples fed into PCA and GMM for purpose of computational speed.
-    scaler_withMean: boolean
-        If False, then in fitting the scaler, 0 is treated as the mean.
-    n_gmm: int
-        Number of GMM components
-    Returns
-    -------
-    fitter: dict
-        Dictionary with the following keys
-        scaler, svd, gmm: sklearn objects
-            Fitted StandardScaler, SVD, and GMM model objects.
-    """
-    X, svd = tailAngles_to_svd_featureArray(ta, n_svd=n_svd,
-                                            use_envelopes=use_envelopes)
-
-    scaler = StandardScaler(with_mean=scaler_withMean).fit(X)
-    X_scaled = scaler.transform(X)
-
-    X_svd = X_scaled[::subSample, :]
-
-    print('Fitting GMM...')
-    gmm = GMM(n_components=n_gmm, covariance_type='full').fit(X_svd)
-    fitter = dict(gmm=gmm, svd=svd, scaler=scaler,
-                  use_envelopes=use_envelopes)
-    return fitter
+    if isinstance(cmap, str):
+        cmap = eval(f'plt.cm.{cmap}')
+    labels, features = model.predict(ta)
+    labels_all = np.arange(model.n_gmm_)
+    scaler = Scaler(standardize=True).fit(labels_all)
+    labels_norm = scaler.transform(labels)
+    clrs = cmap(labels_norm)
+    fh = plt.figure(figsize=figSize)
+    x = np.arange(ta.shape[1])
+    plt.plot(ta[-1], c='k', alpha=line_alpha)
+    for lbl in np.unique(labels):
+        inds = np.where(labels == lbl)[0]
+        clrs_now = clrs[inds].reshape(-1, 4)
+        plt.scatter(x[inds], ta[-1][inds], c=clrs_now, s=marker_size,
+                    marker=f"${str(lbl)}$")
+    return fh
