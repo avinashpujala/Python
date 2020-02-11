@@ -5,46 +5,51 @@ Created on Sat Oct 17 22:42:12 2015
 @author: pujalaa
 """
 import dask
-def agglomerativeClustering(X,n_clusters, linkage = 'ward'):
+import os
+import numpy as np
+
+
+def agglomerativeClustering(X, n_clusters, linkage='ward'):
     """
     Essentially AgglomerativeClustering from sklearn.cluster, but with a few
     more variables of interest appended to the output
     Parameters:
         See sklearn.cluster.AgglomerativeClustering
     """
-    import numpy as np
     from sklearn.cluster import AgglomerativeClustering as ag
-    out = ag(linkage = linkage,n_clusters = n_clusters).fit(X)
-    ctrs = np.zeros((n_clusters,np.shape(X)[1]))
+    out = ag(linkage=linkage, n_clusters=n_clusters).fit(X)
+    ctrs = np.zeros((n_clusters, np.shape(X)[1]))
     for lbl in np.unique(out.labels_):
-        ctrs[lbl,:] = np.mean(X[np.where(out.labels_==lbl)[0],:],axis = 0)
+        ctrs[lbl, :] = np.mean(X[np.where(out.labels == lbl)[0], :], axis=0)
     out.cluster_centers_ = ctrs
     return out
 
-def colorCellsInImgStack(cellInds,imgStack,cellInfo, clrs, processing = 'serial',
-                         idxOrder = 'F', dispColorMaps = False):
+
+def colorCellsInImgStack(cellInds, imgStack, cellInfo, clrs,
+                         processing='serial', idxOrder='F',
+                         dispColorMaps=False):
     """
-    Given the requisite info, returns an image stack in which the cells specified by
-    a set of input indices are colored by the colors specified in the input color map.
-    The format of the variables
+    Given the requisite info, returns an image stack in which the cells
+    specified by a set of input indices are colored by the colors specified in
+    the input color map. The format of the variables
     Inputs/Parameters:
-    cellInds - Indices of cells to color. These indices must be a subset of the indices
-        in the input variable cellInfo
+    cellInds - Indices of cells to color. These indices must be a subset of the
+    indices in the input variable cellInfo
     imgStack - 3D imgStack of shape (z,x,y) to which cells belong
-    cellInfo - cellInfo variable that has been imported into python by my subroutines
-        and which correponds to cell.info created by Takashi's scripts
+    cellInfo - cellInfo variable that has been imported into python by my
+    subroutines and which correponds to cell.info created by Takashi's scripts
     clrs - Array-like or list of array-likes. If array-like, then shape must be
         (nCellInds x 4) rgba color map where each row in clrs indicates the
         color in which to paint a cell of the matching index in cellInds. The
         last column in clrs corresponds to alpha value. If clrs is a list then
         each item is the aforementioned rgba array. Thus, returns as many
         cell-painted image stacks as there are color maps in clrs
-    idxOrder - 'C' or 'F'; determines whether indices should be seen as indexed in
-        row-major (C-style) or column-major (Fortran-style)
-    processing - 'serial' or 'parallel'; the latter results in parallel processing
-        ('parallel' not working yet)
-    dispColorMaps - Boolean; determines whether or not to display the colormap(s)
-        being used in seaborn palplot style
+    idxOrder - 'C' or 'F'; determines whether indices should be seen as indexed
+    in row-major (C-style) or column-major (Fortran-style)
+    processing - 'serial' or 'parallel'; the latter results in parallel
+        processing ('parallel' not working yet)
+    dispColorMaps - Boolean; determines whether or not to display the
+        colormap(s) being used in seaborn palplot style
     """
     import numpy as np
     import apCode.volTools as volt
@@ -58,15 +63,17 @@ def colorCellsInImgStack(cellInds,imgStack,cellInfo, clrs, processing = 'serial'
         if isinstance(clr, tuple):
             clr = np.array(clr)
         pxlInds = cellInfo['inds'][cInd].ravel().astype(int)
-        sliceInds = np.tile(cellInfo['slice'][cInd].astype(int),np.shape(pxlInds))
+        sliceInds = np.tile(cellInfo['slice'][cInd].astype(int),
+                            np.shape(pxlInds))
         imgDims = np.shape(imgStack)[1:3]
-        coords = np.vstack((np.unravel_index(pxlInds,imgDims,order =idxOrder),sliceInds))
+        coords = np.vstack((np.unravel_index(pxlInds, imgDims, order=idxOrder),
+                           sliceInds))
         nCh = np.shape(imgStack)[3]
         for clrChan in np.arange(nCh):
-            imgStack[sliceInds[0],coords[0],coords[1],clrChan] =  clr[clrChan]
+            imgStack[sliceInds[0], coords[0], coords[1], clrChan] = clr[clrChan]
         return imgStack
 
-    def getColoredStack(cellInds,I,cellInfo,clrMap,idxOrder = idxOrder):
+    def getColoredStack(cellInds, I, cellInfo, clrMap, idxOrder=idxOrder):
         if processing.lower().find('parallel') == -1:
             dispChunk = int((0.5*len(cellInds)))
             for cNum, cInd in enumerate(cellInds):
@@ -378,33 +385,38 @@ def labelCellsInImgStack(cellInds,imgStack,cellInfo, vals, processing = 'serial'
         volt.palplot(vals)
         plt.title('Colormaps being used')
 
-    if len(np.shape(cellInds))==0:
-        cellInds = np.reshape(cellInds,(1,))
+    if len(np.shape(cellInds)) == 0:
+        cellInds = np.reshape(cellInds, (1, ))
 
-    if len(np.shape(vals)) ==0:
+    if len(np.shape(vals)) == 0:
         vals = np.tile(vals,(len(cellInds),))
 
     if splitPosNeg:
         I_out = []
-        posInds = np.where(vals>=0)[0]
-        foo = getLabeledStack(cellInds[posInds],I_norm.copy(), cellInfo, vals[posInds],idxOrder = idxOrder,
-                              processing = processing)
+        posInds = np.where(vals >= 0)[0]
+        foo = getLabeledStack(cellInds[posInds], I_norm.copy(), cellInfo,
+                              vals[posInds], idxOrder=idxOrder,
+                              processing=processing)
         I_out.append(foo)
 
-        negInds = np.where(vals<0)[0]
-        foo= getLabeledStack(cellInds[negInds],I_norm.copy(), cellInfo, vals[negInds],idxOrder = idxOrder,
-                              processing = processing)
+        negInds = np.where(vals < 0)[0]
+        foo = getLabeledStack(cellInds[negInds], I_norm.copy(), cellInfo,
+                              vals[negInds], idxOrder=idxOrder,
+                              processing=processing)
         I_out.append(foo)
     else:
-        I_out = getLabeledStack(cellInds,I_norm, cellInfo,vals,idxOrder=idxOrder, processing = processing)
+        I_out = getLabeledStack(cellInds, I_norm, cellInfo, vals,
+                                idxOrder=idxOrder, processing=processing)
 
     return I_out
+
 
 class plt(object):
     """
     Class of functions for making plots
 
     """
+
     def plotCentroids(time, centroids, stimTimes, time_ephys, ephys, scaled = False,
                       colors = None, xlabel = '',ylabel = '', title = ''):
         """
@@ -484,12 +496,12 @@ def readCellData(inDir):
     print(int(time.time()-startTime),'sec')
     return cell
 
-def readPyData(inDir,fileName = 'pyData.mat'):
+def readPyData(inDir, fileName='pyData.mat'):
     '''
     readPyData - read matlab processed data from pyData.mat
     '''
     blah = {}
-    import h5py, os
+    import h5py
     filePath = os.path.join(inDir,fileName)
     f = h5py.File(filePath)
     data = f['data']
@@ -512,14 +524,16 @@ def regress(X, Y, sampleWeight=None, n_jobs=1, individualRegression=False,
     individualRegression - Boolean; If True, will compute individual
         regressions for each of the regressors and return Rsq values for each
         individual regressor in regr.Rsq_ind_
-    method - 'standard' or 'miri'. If 'miri', returns results of regression from
-        method by Miri et al.(2011), where in each regressor is in turn regressed
-        with the other regressors forming an orthonormal basis w.r.t if. If
-        'standard', then regresses at once with regressors/features as is.
+    method - 'standard' or 'miri'. If 'miri', returns results of regression
+        from method by Miri et al.(2011), where in each regressor is in turn
+        regressed with the other regressors forming an orthonormal basis w.r.t
+         it. If 'standard', then regresses at once with regressors/features as
+         is.
     regularization - 'standard', 'lasso', 'ridge'. Read up on sklearn
         documentation for details.
-    alpha - Float, optional. Regularization strength, larger values result in more
-        regularization. See sklearn.linear_model.Ridge or sklearn.linear_model.Lasso.
+    alpha - Float, optional. Regularization strength, larger values result in
+        more regularization. See sklearn.linear_model.Ridge or
+        sklearn.linear_model.Lasso.
     **kwargs: See LinearRegression, Lasso, or Ridge from sklearn.linear_model
         Some commonly used **kwargs are
         normalize: boolean (default = False)
@@ -534,8 +548,118 @@ def regress(X, Y, sampleWeight=None, n_jobs=1, individualRegression=False,
 
     """
     from sklearn import linear_model
-    import numpy as np
     import apCode.SignalProcessingTools as spt
+
+    if regularization.lower() == 'ridge':
+        regr = linear_model.Ridge(alpha=alpha, **kwargs)
+    elif regularization.lower() == 'lasso':
+        regr = linear_model.Lasso(alpha=alpha, **kwargs)
+    else:
+        regr = linear_model.LinearRegression(**kwargs)
+
+    if method.lower() == 'miri':
+        print('Computing regression using Miri method...')
+        nFeatures = np.shape(X)[1]
+        featureInds = np.arange(nFeatures)
+        shuffleInds = featureInds.copy()
+        Y = Y-np.mean(Y, axis=0)
+        M, B, S = [], [], []
+        for featureInd in featureInds:
+            shuffleInds = np.concatenate((np.r_[featureInd],
+                                          np.setdiff1d(featureInds,
+                                                       featureInd)))
+            S.append(shuffleInds)
+            print(shuffleInds)
+            x = spt.linalg.orthonormalize(X[:, shuffleInds])
+            regr.fit(x, Y)
+            M.append(regr.coef_[:, 0])
+            B.append(regr.coef_[:, 0])
+        M, B, S = np.array(M).T, np.array(B).T, np.array(S)
+        regr.coef_ = M
+        regr.intercepts_ = B
+        regr.intercept_ = np.zeros(np.shape(regr.intercept_))
+        regr.shuffledInds_ = S
+        Y_est = regr.predict(X)
+    else:
+        regr.fit(X, Y)
+        Y_est = regr.predict(X)
+
+    if individualRegression:
+        print('Computing regression for individual regressors...')
+        R = []
+        for n, x in enumerate(X.T):
+            print(n)
+            r = linear_model.LinearRegression(**kwargs)
+            y_est = r.fit(np.c_[x], Y).predict(np.c_[x])
+            sse = spt.stats.sse(Y, y_est)
+            sst = spt.stats.sst(Y, y_est)
+            R.append(1-(sse/sst))
+        R = np.array(R).T
+    else:
+        R = 'Not computed'
+
+    fit_intercept = kwargs.get('fit_intercept')
+    if fit_intercept:
+        # coef = np.c_[regr.intercept_, regr.coef_]
+        X = np.c_[np.ones((len(X),)), X]
+    # else:
+    #     coef = regr.coef_
+    se_, mse_, Sxx_ = spt.stats.standardError(Y, Y_est, X[:, 1:])
+    T_ = regr.coef_[:, 1:]/se_[:, 1:]
+    regr.X_ = X
+    regr.Y_ = Y
+    regr.sse_ = spt.stats.sse(Y, Y_est)
+    regr.mse_ = mse_
+    regr.Sxx_ = Sxx_
+    regr.sst_ = spt.stats.sst(Y)
+    regr.Rsq_ = 1-(regr.sse_/regr.sst_)
+    regr.Rsq_adj_ = spt.stats.rSq_adj(Y, Y_est, X.shape[1])
+    regr.Rsq_ind_ = R
+    regr.pred_ = Y_est
+    regr.se_ = se_
+    regr.T_ = T_
+    return regr
+
+def regress_old(X, Y, sampleWeight=None, n_jobs=1, individualRegression=False,
+            method='standard', regularization='standard',
+            alpha=1.0, **kwargs):
+    """
+    Perform a simple linear regression using sklearn.linear_model
+    Inputs:
+    X - Training data; numpy array or sparse matrix of
+        shape (n_samples, n_features)
+    Y  - Target data; numpy array of shape (n_samples, n_targets)
+    sampleWeight - Individual weights for each sample; numpy array
+        of shape (n_samples)
+    individualRegression - Boolean; If True, will compute individual
+        regressions for each of the regressors and return Rsq values for each
+        individual regressor in regr.Rsq_ind_
+    method - 'standard' or 'miri'. If 'miri', returns results of regression
+        from method by Miri et al.(2011), where in each regressor is in turn
+        regressed with the other regressors forming an orthonormal basis w.r.t
+         it. If 'standard', then regresses at once with regressors/features as
+         is.
+    regularization - 'standard', 'lasso', 'ridge'. Read up on sklearn
+        documentation for details.
+    alpha - Float, optional. Regularization strength, larger values result in
+        more regularization. See sklearn.linear_model.Ridge or
+        sklearn.linear_model.Lasso.
+    **kwargs: See LinearRegression, Lasso, or Ridge from sklearn.linear_model
+        Some commonly used **kwargs are
+        normalize: boolean (default = False)
+        fit_intercept: boolean (default = True)
+        n_jobs: int (default = None)
+            Number of parallel cores.
+    References:
+    Miri, A., Daie, K., Burdine, R.D., Aksay, E., and Tank, D.W. (2011).
+        Regression-Based Identification of Behavior-Encoding Neurons During
+        Large-Scale Optical Imaging of Neural Activity at Cellular Resolution.
+        Journal of Neurophysiology 105, 964–980.
+
+    """
+    from sklearn import linear_model
+    import apCode.SignalProcessingTools as spt
+
     def regress_ols(X, Y):
         """
         Get stats like T values and P values using statsmodels.api.OLS
@@ -548,10 +672,11 @@ def regress(X, Y, sampleWeight=None, n_jobs=1, individualRegression=False,
         Returns
         --------
         R: list, (nTargets,)
-            Each element is the result of fitting statsmodels.api.OLS on (Y_i, and X)
-            where i = 1,2,...,nTargets.
+            Each element is the result of fitting statsmodels.api.OLS on
+            (Y_i, and X) where i = 1, 2,..., nTargets.
         """
         import statsmodels.api as sm
+
         def fit_ols(y, X):
             res = sm.OLS(y, X).fit()
             return res
@@ -584,42 +709,10 @@ def regress(X, Y, sampleWeight=None, n_jobs=1, individualRegression=False,
         import matplotlib.pyplot as plt
         import apCode.volTools as volt
 
-        def getClrMap(x,cMap,maskInds):
-            cm = np.zeros((len(x),4))*np.nan
-            negInds = np.where(x<0)[0]
-            posInds = np.where(x>=0)[0]
-            x[negInds] = spt.mapToRange(np.hstack((x[negInds],[0,-1])),[0,127])[0:-2]
-            x[posInds] = spt.mapToRange(np.hstack((x[posInds],[0,1])),[128,255])[0:-2]
-            cm[negInds] = cMap(x[negInds].astype(int))
-            cm[posInds] = cMap(x[posInds].astype(int))
-            if len(maskInds) == 0:
-                pass
-            else:
-                cm[maskInds,-1] = 0
-            return cm
-
-        if isinstance(cMap,str):
-            cMap = plt.cm.get_cmap(cMap)
-
-        if normed:
-            betas = spt.standardize(betas, preserveSign = True, axis = 0)*scaling
-        clrMaps = []
-        for beta in betas.T:
-            if betaThr == None:
-                maskInds = []
-            elif betaThr == 'auto':
-                betaThr = volt.getGlobalThr(np.abs(beta))
-                maskInds = np.where(np.abs(beta)<betaThr)
-            else:
-                maskInds = np.where(np.abs(beta)<betaThr)
-            clrMaps.append(getClrMap(beta,cMap,maskInds))
-        #clrMaps = [getClrMap(beta,cMap,betaThr) for beta in betas.transpose()]
-        return clrMaps
-
     if regularization.lower() == 'ridge':
-        regr = linear_model.Ridge(alpha = alpha,**kwargs)
+        regr = linear_model.Ridge(alpha=alpha, **kwargs)
     elif regularization.lower() == 'lasso':
-        regr = linear_model.Lasso(alpha = alpha,**kwargs)
+        regr = linear_model.Lasso(alpha=alpha,**kwargs)
     else:
         regr = linear_model.LinearRegression(**kwargs)
 
@@ -632,31 +725,32 @@ def regress(X, Y, sampleWeight=None, n_jobs=1, individualRegression=False,
         M,B,S = [],[],[]
         for featureInd in featureInds:
             shuffleInds = np.concatenate((np.r_[featureInd],
-                                          np.setdiff1d(featureInds,featureInd)))
+                                          np.setdiff1d(featureInds,
+                                                       featureInd)))
             S.append(shuffleInds)
             print(shuffleInds)
-            x = spt.linalg.orthonormalize(X[:,shuffleInds])
-            regr.fit(x,Y)
-            M.append(regr.coef_[:,0])
-            B.append(regr.coef_[:,0])
-        M,B,S = np.array(M).T,np.array(B).T,np.array(S)
+            x = spt.linalg.orthonormalize(X[:, shuffleInds])
+            regr.fit(x, Y)
+            M.append(regr.coef_[:, 0])
+            B.append(regr.coef_[:, 0])
+        M, B, S = np.array(M).T, np.array(B).T, np.array(S)
         regr.coef_ = M
         regr.intercepts_ = B
         regr.intercept_ = np.zeros(np.shape(regr.intercept_))
         regr.shuffledInds_ = S
         Y_est = regr.predict(X)
     else:
-        #print('Computing regression using all regressors...')
-        regr.fit(X,Y)
+        # print('Computing regression using all regressors...')
+        regr.fit(X, Y)
         Y_est = regr.predict(X)
 
     if individualRegression:
         print('Computing regression for individual regressors...')
-        R =[]
+        R = []
         for n, x in enumerate(X.T):
             print(n)
             r = linear_model.LinearRegression(**kwargs)
-            y_est = r.fit(np.c_[x],Y).predict(np.c_[x])
+            y_est = r.fit(np.c_[x], Y).predict(np.c_[x])
             sse = spt.stats.sse(Y, y_est)
             sst = spt.stats.sst(Y, y_est)
             R.append(1-(sse/sst))
@@ -670,26 +764,25 @@ def regress(X, Y, sampleWeight=None, n_jobs=1, individualRegression=False,
         X = np.c_[np.ones((len(X),)), X]
     else:
         coef = regr.coef_
-    se_ = spt.stats.standardError(Y, Y_est, X)
+    se_, mse_, Sxx_ = spt.stats.standardError(Y, Y_est, X)
     T_ = coef/se_
     regr.X_ = X
     regr.Y_ = Y
     regr.sse_ = spt.stats.sse(Y, Y_est)
-    regr.mse_ = regr.sse_/(X.shape[0]-X.shape[1]-1)
+    regr.mse_ = mse_
+    regr.Sxx_ = Sxx_
     regr.sst_ = spt.stats.sst(Y)
     regr.Rsq_ = 1-(regr.sse_/regr.sst_)
-    regr.Rsq_adj_ = spt.stats.rSq_adj(Y,Y_est,X.shape[1])
+    regr.Rsq_adj_ = spt.stats.rSq_adj(Y, Y_est, X.shape[1])
     regr.Rsq_ind_ = R
     regr.pred_ = Y_est
     regr.se_ = se_
     regr.T_ = T_
     regr.regress_ols = regress_ols
-    #regr.getCoefWeightedClrMap_posNeg = getCoefWeightedClrMap_posNeg
-    #regr.getClrMapsForEachRegressor = getClrMapsForEachRegressor
-
     return regr
 
-def regress_ols(X,Y):
+
+def regress_ols(X, Y):
     """
     Get stats like T values and P values using statsmodels.api.OLS
     Parameters

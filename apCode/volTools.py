@@ -791,33 +791,33 @@ class img(object):
 
         if nPts is None:
             nPts = 255
-        if (isinstance(cMap, list)) & (len(cMap)>1):
+        if (isinstance(cMap, list)) & (len(cMap) > 1):
             pass
         else:
             cMap = [cMap]
         clrsList = []
         for cmNum, cm in enumerate(cMap):
-            if isinstance(cm,str):
+            if isinstance(cm, str):
                 cm = plt.cm.get_cmap(cm)
-                x = np.linspace(0,255,nPts).astype(int)
+                x = np.linspace(0, 255, nPts).astype(int)
                 clrs = [cm(item) for item in x]
             elif isinstance(cm, list):
-                x = np.linspace(0,len(cm)-1,nPts).astype(int)
+                x = np.linspace(0, len(cm)-1, nPts).astype(int)
                 clrs = [cm[item] for item in x]
-            elif isinstance(cm,np.ndarray):
-                x = np.linspace(0,np.shape(cm)[0]-1,nPts).astype(int)
-                clrs = [cm[item,:] for item in x]
+            elif isinstance(cm, np.ndarray):
+                x = np.linspace(0, np.shape(cm)[0]-1, nPts).astype(int)
+                clrs = [cm[item, :] for item in x]
             else:
-                x = np.linspace(0,255,nPts)
+                x = np.linspace(0, 255, nPts)
                 clrs = [cm(int(item)) for item in x]
             clrsList.append(clrs)
-            plt.style.use(('seaborn-dark','dark_background'))
-            if np.shape(clrs)[1]==4:
-                plt.scatter(x,np.ones(np.shape(x))-cmNum, color = clrs, s = 1000,
-                            marker = 's');
+            plt.style.use(('seaborn-dark', 'dark_background'))
+            if np.shape(clrs)[1] == 4:
+                plt.scatter(x, np.ones(np.shape(x))-cmNum, color=clrs, s=1000,
+                            marker='s')
             else:
-                plt.scatter(x,np.ones(np.shape(x))-cmNum, color = clrs, s = 1000,
-                            marker = 's');
+                plt.scatter(x, np.ones(np.shape(x))-cmNum, color=clrs, s=1000,
+                            marker='s')
         plt.axis('off')
         return clrsList
 

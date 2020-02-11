@@ -1129,6 +1129,14 @@ def fixEyeOrientations(eyeOr):
     return np.array(eyeOr_fixed)
 
 
+def get_session_inds(stimLocs, regex=r'\d{1,5}'):
+    import re
+    inds = []
+    for s in stimLocs:
+        inds.append(np.int(re.findall(regex, s)[0]))
+    return np.array(inds)
+
+
 def impulse_trains_from_labels(labels, ta, labels_sel=None,
                                split_lr: bool = True, unit_amp: bool = True):
     """

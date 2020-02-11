@@ -938,7 +938,7 @@ class spectral():
             p = np.abs(np.fft.fft(y, n=nfft))[:n]/n
 
         f = np.fft.fftfreq(nfft)[:n]*(1/dt)
-        #f = np.linspace(0,1,nfft/2)*(1/dt)*0.5
+        # f = np.linspace(0,1,nfft/2)*(1/dt)*0.5
         return p, f
 
 
@@ -962,7 +962,7 @@ class stats(object):
 
         a = 1.0*np.array(data)
         n = len(a)
-        m, se = np.mean(a), scipy.stats.sem(a)
+        _, se = np.mean(a), scipy.stats.sem(a)
         h = se * sp.stats.t._ppf((1+confidence)/2., n-1)
         return h
 
@@ -998,7 +998,7 @@ class stats(object):
         if np.ndim(X) == 1:
             X = X[:, np.newaxis]
         X_sort = np.sort(X, axis=axis)
-        if axis == None:
+        if axis is None:
             thr_up = X_sort[np.int(len(X_sort)*perc_up/100)]
             thr_low = X_sort[np.int(len(X_sort)*perc_low/100)]
             X_perc = (X-thr_low)/(thr_up-thr_low)
@@ -1010,13 +1010,15 @@ class stats(object):
             vec = np.arange(len(shape))
             sd = np.setdiff1d(vec, axis)
             shape[sd] = 1
-            thr_up = np.take(X, [(shape[axis]*perc_up/100).astype(int)], axis=axis)
+            thr_up = np.take(X, [(shape[axis]*perc_up/100).astype(int)],
+                             axis=axis)
             thr_up = np.tile(thr_up, shape)
-            thr_low = np.take(X, [(shape[axis]*perc_low/100).astype(int)], axis=axis)
+            thr_low = np.take(X, [(shape[axis]*perc_low/100).astype(int)],
+                              axis=axis)
             thr_low = np.tile(thr_low, shape)
             X_perc = (X-thr_low)/(thr_up-thr_low)
-            #thr_up = thr_up.ravel()[0]
-            #thr_low = thr_low.ravel()[0]
+            # thr_up = thr_up.ravel()[0]
+            # thr_low = thr_low.ravel()[0]
             X_perc[X_perc > 1] = 1
             X_perc[X_perc < 0] = 0
             X_perc = X_perc*(thr_up-thr_low) + thr_low
@@ -1028,8 +1030,8 @@ class stats(object):
             residues as described in Miri et al.
         Parameters:
         Y: Array of shape (nSamples, nVariables). This is the actual data
-        Y_est: Same shape as Y. This is the estimate of Y computed from regression,
-            or the like.
+        Y_est: Same shape as Y. This is the estimate of Y computed from
+        regression, or the like.
         Returns:
         r: residues
         """
@@ -1078,19 +1080,22 @@ class stats(object):
             Array of explanatory variables (features) used in regression.
         Returns
         -------
-        se : (nTargets,nFeatures)
+        se : array, (nTargets,nFeatures)
             Standard error, which when the coefficients matrix (regression
             betas) yields the T-values
+        mse: array, (nTargets,1)
+            Mean-squared errors of the targets.
+        Sxx: array, (1, nFeatures)
         """
         import numpy as np
         nSamples = len(Y)
         nFeatures = X.shape[1]
         mse = (stats.sse(Y, Y_est)/(nSamples-nFeatures-1)).reshape(-1, 1)
-#        Sxx= np.sum((X-X.mean(axis = 0))**2,axis = 0).reshape(1,-1)
+        Sxx = np.sum((X-X.mean(axis=0))**2, axis=0).reshape(1, -1)
 #        foo = mse@(1/Sxx)
-        Sxx = np.linalg.pinv(np.dot(X.T, X)).diagonal().reshape(1, -1)
+        # Sxx = np.linalg.pinv(np.dot(X.T, X)).diagonal().reshape(1, -1)
         se_ = np.sqrt(mse@Sxx)
-        return se_
+        return se_, mse, Sxx
 
     def sse(Y, Y_est):
         """
@@ -1421,13 +1426,14 @@ class timeseries():
         n: integer
             Number of signals to combine per combination.
         N: integer or none
-            Number of combined signals to return. If None, returns all combinations
+            Number of combined signals to return. If None, returns all
+            combinations
         """
         import numpy as np
         from itertools import combinations
         nSignals = np.shape(signals)[1]
         combs = np.array(list(combinations(np.arange(nSignals), n)))
-        if N == None:
+        if N is None:
             N = np.shape(combs[0])
         rp = np.random.permutation(np.shape(combs)[0])
         rp = rp[:N]
@@ -1472,8 +1478,9 @@ class timeseries():
 
     def jitter(x, jitter_range=(-2, 20)):
         """
-        Given a set of timeseries, and a jitter range, returns jittered versions of
-        the timeseries with the amound of jitter randomly pulled from the jitter range.
+        Given a set of timeseries, and a jitter range, returns jittered
+        versions of the timeseries with the amound of jitter randomly pulled
+        from the jitter range.
         """
         import numpy as np
         rngVec = np.arange(*jitter_range)
@@ -1487,8 +1494,8 @@ class timeseries():
 
     def matchByTranslating(x, y, padType='edge'):
         """
-        Given two 1D arrays (such as timeseries), aligns by circularly shifting one w.r.t
-        the other
+        Given two 1D arrays (such as timeseries), aligns by circularly shifting
+        one w.r.t the other
         Parameters
         ----------
         x: Array (n,)
@@ -1497,15 +1504,15 @@ class timeseries():
             Timeseries to be rolled (circularly shifted).
         padType: string
             'edge'| 'zero'
-            If 'edge' then edge pads signals to equalize their lengths, else zero pads.
-
+            If 'edge' then edge pads signals to equalize their lengths, else
+            zero pads.
         Returns
         -------
         out: dictionary
             Has the following keys
         'sign': scalar
-            -1 | 1, Multiplying the timeseries by the sign results in positive correlation
-            with reference signa
+            -1 | 1, Multiplying the timeseries by the sign results in positive
+            correlation with reference signal
         'lag_max': scalar
             Signal must be rolled by this much to produce maximum correlation.
         'lags': 1D array (n+k-1,)
@@ -1524,10 +1531,10 @@ class timeseries():
         c = correlate(x, y, mode='full')/(np.linalg.norm(x)*np.linalg.norm(y))
         lenDiff = len(y)-len(x)
 
-        #nLags = len(x) + len(y)-1
+        # nLags = len(x) + len(y)-1
         lags = np.arange(-len(y)+1, len(x))
-        #lags = np.arange(nLags)
-        #lags = lags-int(np.ceil(np.median(lags)))
+        # lags = np.arange(nLags)
+        # lags = lags-int(np.ceil(np.median(lags)))
         ind_max = np.argmax(np.abs(c))
         sign = np.sign(c[ind_max])
         lag_best = lags[ind_max]
@@ -1568,9 +1575,11 @@ class timeseries():
 
         tDiff = np.shape(X)[1]-np.shape(Y)[1]
         if tDiff > 0:
-            Y = np.pad(Y, pad_width=((0, 0), (0, tDiff)), mode='constant', constant_values=(0,))
+            Y = np.pad(Y, pad_width=((0, 0), (0, tDiff)), mode='constant',
+                       constant_values=(0,))
         elif tDiff < 0:
-            X = np.pad(X, pad_width=((0, 0), (0, -tDiff)), mode='constant', constant_values=(0,))
+            X = np.pad(X, pad_width=((0, 0), (0, -tDiff)), mode='constant',
+                       constant_values=(0,))
         lenShift = np.shape(X)[1]
         corrs, shift = [], []
         for x in np.arange(-lenShift, lenShift):
@@ -1601,8 +1610,8 @@ class timeseries():
 
     def pad(x, pad_width=(0, 0), padType='zero'):
         """
-        Does more or less the same thing as numpy.pad, except includes a simpler
-        way to zero-pad
+        Does more or less the same thing as numpy.pad, except includes a
+        simpler way to zero-pad
         """
         import numpy as np
         if padType.lower() == 'zero':
@@ -1652,9 +1661,9 @@ class timeseries():
         x: 1D array
             Timeseries to triplicate
         flip: Boolean
-            If True, then flips the 1st and 3rd segments for continuity. Regardless
-            of whether or not flip is True, the middle segment will always look
-            like the original signal
+            If True, then flips the 1st and 3rd segments for continuity.
+            Regardless of whether or not flip is True, the middle segment
+            will always look like the original signal
         Returns:
         y: 1D array
         Triplicated signal
@@ -1676,8 +1685,8 @@ def zeroPadToNextPowOf2(y):
     '''
     import numpy as np
     N = len(y)
-    #base2 = np.fix(np.log2(N)+0.4999).astype(int)
-    #x = np.hstack((y,np.zeros(2**(base2+1)-N)))
+    # base2 = np.fix(np.log2(N)+0.4999).astype(int)
+    # x = np.hstack((y,np.zeros(2**(base2+1)-N)))
     base2 = nextPow2(N)
     x = np.hstack((y, np.zeros(2**(base2)-N)))
     return x
@@ -1695,7 +1704,7 @@ def zscore(x, axis=None):
     """
     import numpy as np
     def func(x): return (x-np.mean(x))/(np.std(x))
-    if axis == None:
+    if axis is None:
         out = func(x)
     else:
         out = np.apply_along_axis(func, axis, x)
