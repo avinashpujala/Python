@@ -496,21 +496,25 @@ def readCellData(inDir):
     print(int(time.time()-startTime),'sec')
     return cell
 
+
 def readPyData(inDir, fileName='pyData.mat'):
     '''
     readPyData - read matlab processed data from pyData.mat
     '''
     blah = {}
     import h5py
-    filePath = os.path.join(inDir,fileName)
+    filePath = os.path.join(inDir, fileName)
     f = h5py.File(filePath)
     data = f['data']
     for key in list(data.keys()):
-        blah[key]  = data[key]
+        blah[key] = data[key]
     return blah
+#
+# class Regression(object):
+#     def __init__(self,X)
 
 
-def regress(X, Y, sampleWeight=None, n_jobs=1, individualRegression=False,
+def regress(X, Y, sampleWeight=None, n_jobs=-1, individualRegression=False,
             method='standard', regularization='standard',
             alpha=1.0, **kwargs):
     """
@@ -600,172 +604,12 @@ def regress(X, Y, sampleWeight=None, n_jobs=1, individualRegression=False,
 
     fit_intercept = kwargs.get('fit_intercept')
     if fit_intercept:
-        # coef = np.c_[regr.intercept_, regr.coef_]
-        X = np.c_[np.ones((len(X),)), X]
-    # else:
-    #     coef = regr.coef_
-    se_, mse_, Sxx_ = spt.stats.standardError(Y, Y_est, X[:, 1:])
-    T_ = regr.coef_[:, 1:]/se_[:, 1:]
-    regr.X_ = X
-    regr.Y_ = Y
-    regr.sse_ = spt.stats.sse(Y, Y_est)
-    regr.mse_ = mse_
-    regr.Sxx_ = Sxx_
-    regr.sst_ = spt.stats.sst(Y)
-    regr.Rsq_ = 1-(regr.sse_/regr.sst_)
-    regr.Rsq_adj_ = spt.stats.rSq_adj(Y, Y_est, X.shape[1])
-    regr.Rsq_ind_ = R
-    regr.pred_ = Y_est
-    regr.se_ = se_
-    regr.T_ = T_
-    return regr
-
-def regress_old(X, Y, sampleWeight=None, n_jobs=1, individualRegression=False,
-            method='standard', regularization='standard',
-            alpha=1.0, **kwargs):
-    """
-    Perform a simple linear regression using sklearn.linear_model
-    Inputs:
-    X - Training data; numpy array or sparse matrix of
-        shape (n_samples, n_features)
-    Y  - Target data; numpy array of shape (n_samples, n_targets)
-    sampleWeight - Individual weights for each sample; numpy array
-        of shape (n_samples)
-    individualRegression - Boolean; If True, will compute individual
-        regressions for each of the regressors and return Rsq values for each
-        individual regressor in regr.Rsq_ind_
-    method - 'standard' or 'miri'. If 'miri', returns results of regression
-        from method by Miri et al.(2011), where in each regressor is in turn
-        regressed with the other regressors forming an orthonormal basis w.r.t
-         it. If 'standard', then regresses at once with regressors/features as
-         is.
-    regularization - 'standard', 'lasso', 'ridge'. Read up on sklearn
-        documentation for details.
-    alpha - Float, optional. Regularization strength, larger values result in
-        more regularization. See sklearn.linear_model.Ridge or
-        sklearn.linear_model.Lasso.
-    **kwargs: See LinearRegression, Lasso, or Ridge from sklearn.linear_model
-        Some commonly used **kwargs are
-        normalize: boolean (default = False)
-        fit_intercept: boolean (default = True)
-        n_jobs: int (default = None)
-            Number of parallel cores.
-    References:
-    Miri, A., Daie, K., Burdine, R.D., Aksay, E., and Tank, D.W. (2011).
-        Regression-Based Identification of Behavior-Encoding Neurons During
-        Large-Scale Optical Imaging of Neural Activity at Cellular Resolution.
-        Journal of Neurophysiology 105, 964–980.
-
-    """
-    from sklearn import linear_model
-    import apCode.SignalProcessingTools as spt
-
-    def regress_ols(X, Y):
-        """
-        Get stats like T values and P values using statsmodels.api.OLS
-        Parameters
-        ----------
-        X: array, (nSamples, nFeatures)
-            Regressor/predictor variable array.
-        Y: array, (nSamples, nTargets)
-            Reponse variable array
-        Returns
-        --------
-        R: list, (nTargets,)
-            Each element is the result of fitting statsmodels.api.OLS on
-            (Y_i, and X) where i = 1, 2,..., nTargets.
-        """
-        import statsmodels.api as sm
-
-        def fit_ols(y, X):
-            res = sm.OLS(y, X).fit()
-            return res
-        X = sm.add_constant(X)
-        R = []
-        for y in Y.T:
-            res = fit_ols(y, X)
-            R.append(res)
-        return R
-
-    def getClrMapsForEachRegressor(betas, normed=True, cMap='PiYG',
-                                   scaling=1, betaThr=None):
-        """
-        Given the coeffiecients(betas) from regression, returns a list of color
-        maps, with each color map corresponding to the betas for a single
-        regressor. These can be used by colorCellsInImgStack to create image
-        stacks with cells colored by betas.
-        Parameters:
-        betas - Array-like with shape (nSamples, nFeatures).
-        normed - Boolean; If True, normalizes betas such that for each feature
-            the values range from -1 to 1.
-        scaling - Not yet implemented
-        betaThr - None(default),scalar,'auto'; Determines if any thresholding
-            should be applied based on beta values. If None, then no
-            thresholding, if scalar, then for beta values whose magnitude is
-            less than this scalar, the alpha value in the color maps is set to
-            zero. If 'auto' then automatically determines threshold
-        """
-        import apCode.SignalProcessingTools as spt
-        import matplotlib.pyplot as plt
-        import apCode.volTools as volt
-
-    if regularization.lower() == 'ridge':
-        regr = linear_model.Ridge(alpha=alpha, **kwargs)
-    elif regularization.lower() == 'lasso':
-        regr = linear_model.Lasso(alpha=alpha,**kwargs)
-    else:
-        regr = linear_model.LinearRegression(**kwargs)
-
-    if method.lower() == 'miri':
-        print('Computing regression using Miri method...')
-        nFeatures = np.shape(X)[1]
-        featureInds = np.arange(nFeatures)
-        shuffleInds = featureInds.copy()
-        Y = Y-np.mean(Y,axis = 0)
-        M,B,S = [],[],[]
-        for featureInd in featureInds:
-            shuffleInds = np.concatenate((np.r_[featureInd],
-                                          np.setdiff1d(featureInds,
-                                                       featureInd)))
-            S.append(shuffleInds)
-            print(shuffleInds)
-            x = spt.linalg.orthonormalize(X[:, shuffleInds])
-            regr.fit(x, Y)
-            M.append(regr.coef_[:, 0])
-            B.append(regr.coef_[:, 0])
-        M, B, S = np.array(M).T, np.array(B).T, np.array(S)
-        regr.coef_ = M
-        regr.intercepts_ = B
-        regr.intercept_ = np.zeros(np.shape(regr.intercept_))
-        regr.shuffledInds_ = S
-        Y_est = regr.predict(X)
-    else:
-        # print('Computing regression using all regressors...')
-        regr.fit(X, Y)
-        Y_est = regr.predict(X)
-
-    if individualRegression:
-        print('Computing regression for individual regressors...')
-        R = []
-        for n, x in enumerate(X.T):
-            print(n)
-            r = linear_model.LinearRegression(**kwargs)
-            y_est = r.fit(np.c_[x], Y).predict(np.c_[x])
-            sse = spt.stats.sse(Y, y_est)
-            sst = spt.stats.sst(Y, y_est)
-            R.append(1-(sse/sst))
-        R = np.array(R).T
-    else:
-        R = 'Not computed'
-
-    fit_intercept = kwargs.get('fit_intercept')
-    if fit_intercept:
         coef = np.c_[regr.intercept_, regr.coef_]
         X = np.c_[np.ones((len(X),)), X]
     else:
         coef = regr.coef_
-    se_, mse_, Sxx_ = spt.stats.standardError(Y, Y_est, X)
-    T_ = coef/se_
+    se_, mse_, Sxx_ = spt.stats.standardError(Y, Y_est, X[:, 1:])
+    T_ = coef[:, 1:]/se_
     regr.X_ = X
     regr.Y_ = Y
     regr.sse_ = spt.stats.sse(Y, Y_est)
@@ -778,7 +622,6 @@ def regress_old(X, Y, sampleWeight=None, n_jobs=1, individualRegression=False,
     regr.pred_ = Y_est
     regr.se_ = se_
     regr.T_ = T_
-    regr.regress_ols = regress_ols
     return regr
 
 

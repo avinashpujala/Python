@@ -1,42 +1,42 @@
 
-
-#import sys
-#sys.path.insert(1, 'C:/Users/pujalaa/Documents/Code/Python/code/codeFromNV')
-#sys.path.insert(1, 'C:/Users/pujalaa/Documents/Code/Python/code/util')
-
 import numpy as np
 import psutil
 import dask
-def angleBetween2DVectors(v1,v2):
+import os
+import sys
+
+
+def angleBetween2DVectors(v1, v2):
     '''
     Given a list or array of 2D vectors, returns the angle (in radians) between
-        each of the vectors such that a sweep from from the 1st vec to the second
-        2nd vec in the counterclockwise direction returns negative angles whereas a
-        sweep in the clockwise direction results in positive angles
+        each of the vectors such that a sweep from from the 1st vec to the
+        2nd vec in the counterclockwise direction returns negative angles
+        whereas a sweep in the clockwise direction results in positive angles
     Inputs:
     v1, v2 - The 2 input vectors of size N x 2
     '''
-    v1,v2 = np.array(v1), np.array(v2)
-    if len(np.shape(v1))>1:
-        if np.shape(v1)[1] !=2:
+    v1, v2 = np.array(v1), np.array(v2)
+    if len(np.shape(v1)) > 1:
+        if np.shape(v1)[1] != 2:
             v1 = np.transpose(v1)
-        if np.shape(v2)[1] !=2:
+        if np.shape(v2)[1] != 2:
             v2 = np.transpose(v2)
-        v1 = v1[:,0] + v1[:,1]*1j
-        v2= v2[:,0] + v2[:,1]*1j
+        v1 = v1[:, 0] + v1[:, 1]*1j
+        v2 = v2[:, 0] + v2[:, 1]*1j
     else:
         v1 = v1[0] + v1[1]*1j
         v2 = v2[0] + v2[1]*1j
-    angle =  np.angle(v1*np.conj(v2))
+    angle = np.angle(v1*np.conj(v2))
     return angle
 
-def animate_images(I, fps = 30, display = True, save = False,
-                   savePath = None,**kwargs):
+
+def animate_images(images, fps=30, display=True, save=False, savePath=None,
+                   **kwargs):
     """
     Movie from an image stack
     Parameters
     ----------
-    I: array, (T,M,N)
+    images: array, (T,M,N)
         Image stack. Animate along first dimension (typically time)
     fps: scalar
         Frames per second
@@ -56,43 +56,42 @@ def animate_images(I, fps = 30, display = True, save = False,
     """
     import matplotlib.pyplot as plt
     from matplotlib import animation
-    plt.rcParams['animation.ffmpeg_path'] = r'V:\Code\Python\FFMPEG\bin\ffmpeg.exe'
+    plt.rcParams['animation.ffmpeg_path'] =\
+        r'V:\Code\Python\FFMPEG\bin\ffmpeg.exe'
     from IPython.display import HTML
     import time
 
-    N = I.shape[0]
+    N = images.shape[0]
     cmap = kwargs.get('cmap', 'gray')
     interp = kwargs.get('interpolation', 'nearest')
     dpi = kwargs.get('dpi', 30)
     plt.style.use(('seaborn-poster', 'dark_background'))
-    fh = plt.figure(dpi = dpi, facecolor='k')
-    ax = fh.add_subplot(111, frameon = False)
+    fh = plt.figure(dpi=dpi, facecolor='k')
+    ax = fh.add_subplot(111, frameon=False)
     ax.set_aspect('equal')
     ax.get_xaxis().set_visible(False)
     ax.get_yaxis().set_visible(False)
-#    ax.set_frame_on(False)
-    im = ax.imshow(I[0], cmap= cmap, interpolation = interp,
-                   vmin = I.min(), vmax = I.max())
+    im = ax.imshow(images[0], cmap=cmap, interpolation=interp,
+                   vmin=images.min(), vmax=images.max())
 
     def update_img(n):
-        im.set_data(I[n])
+        im.set_data(images[n])
         ax.set_title('Frame # {}'.format(n))
 
-    ani = animation.FuncAnimation(fh,update_img, np.arange(N),interval= 1000/fps,
-                                  repeat = False)
+    ani = animation.FuncAnimation(fh, update_img, np.arange(N),
+                                  interval=1000/fps, repeat=False)
     plt.close(fh)
 
     if save:
         print('Saving...')
         writer = animation.writers['ffmpeg'](fps=fps)
-        if savePath != None:
-            ani.save(savePath, writer = writer, dpi = dpi)
+        if savePath is not None:
+            ani.save(savePath, writer=writer, dpi=dpi)
             print('Saved to \n{}'.format(savePath))
         else:
             vidName = 'video_{}.mp4'.format(time.strftime('%Y%m%d'))
             ani.save(vidName, writer=writer, dpi=dpi)
             print('Saved in current drirve as \n{}'.format(vidName))
-
     if display:
         print('Displaying...')
         return HTML(ani.to_html5_video())
@@ -100,23 +99,25 @@ def animate_images(I, fps = 30, display = True, save = False,
         return ani
 
 
-def calculateTimePtsFromTPlane(imgDir,fileExt = '.stack'):
-    import sys, os,time
-    sys.path.insert(0, 'C:/Users/pujalaa/Documents/Code/Python/code/codeFromNV')
+def calculateTimePtsFromTPlane(imgDir, fileExt='.stack'):
+    import time
+    sys.path.insert(0,
+                    'C:/Users/pujalaa/Documents/Code/Python/code/codeFromNV')
     sys.path.insert(0, 'C:/Users/pujalaa/Documents/Code/Python/code/util')
     import tifffile as tf
     fileName = 'Plane01' + fileExt
-    fp = os.path.join(imgDir,fileName)
+    fp = os.path.join(imgDir, fileName)
     print('Reading plane data...')
     startTime = time.time()
-    with open(fp,'rb') as file:
+    with open(fp, 'rb') as file:
         A = file.read()
-    print(int(time.time()-startTime),'sec')
-    I = tf.TiffFile(os.path.join(imgDir,'ave.tif')).asarray()
-    nPxlsInSlice = np.shape(I)[1]*np.shape(I)[2]
+    print(int(time.time()-startTime), 'sec')
+    images = tf.TiffFile(os.path.join(imgDir, 'ave.tif')).asarray()
+    nPxlsInSlice = np.shape(images)[1]*np.shape(images)[2]
     nTimePts = len(A)/nPxlsInSlice
     nTimePts = int(nTimePts/2)
     return nTimePts
+
 
 def cart2pol(x, y):
     """
@@ -134,6 +135,7 @@ def cart2pol(x, y):
     theta = np.arctan2(y, x)
     return np.array([theta, rho])
 
+
 def cropND(arr, bounding):
     """
     Crop an N-dimensional volume using the specified bounding
@@ -148,7 +150,8 @@ def cropND(arr, bounding):
     arr_crop: array, (bounding.shape)
         Cropped array
 
-    From the good Sam "Losses Don" at https://stackoverflow.com/users/3931936/losses-don
+    From the good sam "Losses Don" at
+    https://stackoverflow.com/users/3931936/losses-don
     """
     from operator import add
     start = tuple(map(lambda a, da: a//2-da//2, arr.shape, bounding))
@@ -156,18 +159,19 @@ def cropND(arr, bounding):
     slices = tuple(map(slice, start, end))
     return arr[slices]
 
+
 class cv(object):
     '''
-    A set of routines used in computer vision. Most of the code is from the book
-    "Programming Computer Vision with Python" by Jan Erik Solem (2012)
+    A set of routines used in computer vision. Most of the code is from the
+    book "Programming Computer Vision with Python" by Jan Erik Solem (2012)
     '''
     def pca(X):
         """
         Principal Components Analysis
         Parameters
         X: array-like
-            Matrix of size M x N,  M = # of observations, and N = dimensionality
-            of the training data.
+            Matrix of size M x N,  M = # of observations, and
+            N = dimensionality of the training data.
 
         Returns
         V : projection matrix with important dimensions first
@@ -179,29 +183,34 @@ class cv(object):
         nObs, dim = X.shape
 
         # Center data
-        mean_X = X.mean(axis = 0)
+        mean_X = X.mean(axis=0)
         X = X - mean_X
         if dim > nObs:
             # PCA - compact trick used
-            M = np.dot(X,X.T) # covariance matrix
-            e,EV = np.linalg.eigh(M) # eigenvalues and eigenvectors
-            tmp = np.dot(X.T,EV).T #  this is the compact trick
-            V = tmp[::-1] # reverse, since last eigenvectors are the ones we want
-            S = sp.sqrt(e)[::-1] # reverse, since eigenvalues are in increasing order
-            V = V + 0j # This is a hack that AP implemented to prevent error with complex numbers
+            M = np.dot(X, X.T)  # covariance matrix
+            e, EV = np.linalg.eigh(M)  # eigenvalues and eigenvectors
+            tmp = np.dot(X.T, EV).T  # this is the compact trick
+            V = tmp[::-1]  # reverse, since last eigenvectors are the ones we
+            # want
+            S = sp.sqrt(e)[::-1]  # reverse, since eigenvalues are in
+            # increasing order
+            V = V + 0j  # This is a hack that AP implemented to prevent error
+            # with complex numbers
+
             for i in range(V.shape[1]):
-                V[:,i] /= S
+                V[:, i] /= S
             V = sp.absolute(V)
             S = sp.absolute(S)
         else:
             # PCA - SVD used
-            U,S,V = np.linalg.svd(X)
-            V = V[:nObs] # only makes sense to return the first nObs vectors
+            U, S, V = np.linalg.svd(X)
+            V = V[:nObs]  # only makes sense to return the first nObs vectors
 
         # Return the projection matrix, the variance and the mean
         return V, S, mean_X
 
-def dask_array_from_image_sequence(imgDir, ext:str = 'bmp', verbose = 0):
+
+def dask_array_from_image_sequence(imgDir, ext: str = 'bmp', verbose=0):
     """
     Returns a lazy dask array of dimensions corresponding to the image
     stack that would have resulted if a sequence of image files within the
@@ -226,16 +235,18 @@ def dask_array_from_image_sequence(imgDir, ext:str = 'bmp', verbose = 0):
     from dask import delayed
     from os.path import join
     from apCode.FileTools import findAndSortFilesInDir
-    files = findAndSortFilesInDir(imgDir, ext = ext)
+    files = findAndSortFilesInDir(imgDir, ext=ext)
     imgPath = join(imgDir, files[0])
     img = imread(imgPath)
     imgDims = img.shape
     if verbose:
         print(f'Image dimensions: {imgDims}')
-    images_delayed = [delayed(imread)(join(imgDir,f)) for f in files]
-    arr = [da.from_delayed(d, shape = imgDims, dtype = img.dtype) for d in images_delayed]
-    arr = da.stack(arr,axis = 0)
+    images_delayed = [delayed(imread)(join(imgDir, f)) for f in files]
+    arr = [da.from_delayed(d, shape=imgDims, dtype=img.dtype)
+           for d in images_delayed]
+    arr = da.stack(arr, axis=0)
     return arr
+
 
 def dask_array_from_scanimage_tifs(imgDir):
     """
@@ -254,8 +265,8 @@ def dask_array_from_scanimage_tifs(imgDir):
     -------
     imgStack: dask array, ([T,C,Z,] M, N)
         Dask array corresponding to an image stack, where T is the number of
-        time points, C = # of channels, Z = # of slices, and (M, N) are the image
-        height and width respectively.
+        time points, C = # of channels, Z = # of slices, and (M, N) are the
+        image height and width respectively.
     """
     from skimage.io import imread
     import dask.array as da
@@ -269,29 +280,31 @@ def dask_array_from_scanimage_tifs(imgDir):
     nCh = mode(tifInfo['nChannelsInFile'])[0][0]
     nFrames = mode(tifInfo['nFramesPerVolume'])[0][0]
 
-    inds_del1 = np.where(tifInfo['nChannelsInFile']!=nCh)
+    inds_del1 = np.where(tifInfo['nChannelsInFile'] != nCh)
     inds_del2 = np.where(tifInfo['nFramesPerVolume'] != nFrames)
     inds_del = np.union1d(inds_del1, inds_del2)
-    files = findAndSortFilesInDir(imgDir, ext = ext)
-    files = np.delete(files, inds_del, axis = 0)
+    files = findAndSortFilesInDir(imgDir, ext=ext)
+    files = np.delete(files, inds_del, axis=0)
 
-    nImgs = np.delete(tifInfo['nImagesInFile'],inds_del,axis= 0)
+    nImgs = np.delete(tifInfo['nImagesInFile'], inds_del, axis=0)
     imgPath = join(imgDir, files[0])
     img = imread(imgPath)
     imgDims = img.shape[-2:]
     print(f'Image dimensions: {(nImgs[0], *imgDims)}')
-    images_delayed = [delayed(imread)(join(imgDir,f)) for f in files]
-    arr = [da.from_delayed(d, shape = (nImgs,*imgDims), dtype = img.dtype) for nImgs, d in\
+    images_delayed = [delayed(imread)(join(imgDir, f)) for f in files]
+    arr = [da.from_delayed(d, shape=(nImgs, *imgDims),
+                           dtype=img.dtype) for nImgs, d in
            zip(tifInfo['nImagesInFile'], images_delayed)]
     block = nCh*nFrames
     nImgs_even = block*(nImgs//block)
-    arr = [a[:n] for n, a in zip(nImgs_even,arr)]
-    arr = da.concatenate(arr,axis = 0)
-    arr = arr.reshape(-1,nFrames,nCh,*imgDims)
-    arr = np.squeeze(np.swapaxes(arr,1,2))
+    arr = [a[:n] for n, a in zip(nImgs_even, arr)]
+    arr = da.concatenate(arr, axis=0)
+    arr = arr.reshape(-1, nFrames, nCh, *imgDims)
+    arr = np.squeeze(np.swapaxes(arr, 1, 2))
     return arr, tifInfo
 
-def denoise_wavelet(images,scheduler = 'threads',**kwargs):
+
+def denoise_wavelet(images, scheduler='threads', **kwargs):
     """
     Wrapper for applying denoise_wavelet from skimage.restoration to
     a stack of images using dask backend
@@ -311,17 +324,18 @@ def denoise_wavelet(images,scheduler = 'threads',**kwargs):
         Denoised images
     """
     from skimage.restoration import denoise_wavelet
-    if np.ndim(images)==2:
-        images = images[np.newaxis,...]
+    if np.ndim(images) == 2:
+        images = images[np.newaxis, ...]
 
-    kwargs['method'] = kwargs.get('method','BayesShrink')
-    kwargs['mode'] = kwargs.get('mode','soft')
-    images_den = dask.compute(*[dask.delayed(denoise_wavelet)(img,**kwargs)\
-                                for img in images], scheduler = scheduler)
+    kwargs['method'] = kwargs.get('method', 'BayesShrink')
+    kwargs['mode'] = kwargs.get('mode', 'soft')
+    images_den = dask.compute(*[dask.delayed(denoise_wavelet)(img, **kwargs)
+                                for img in images], scheduler=scheduler)
     images_den = np.array(images_den)
     return np.squeeze(images_den)
 
-def getGlobalThr(img,thr0 = [],tol = 1/500,nIter_max= 100):
+
+def getGlobalThr(img, thr0=[], tol=1/500, nIter_max=100):
     '''
     Gets an image or vector, uses an iterative algorithm to find a
     single threshold, which can be used for image binarization or
@@ -340,56 +354,52 @@ def getGlobalThr(img,thr0 = [],tol = 1/500,nIter_max= 100):
     from skimage.filters import threshold_otsu
     import numpy as np
 
-    def DiffThr(img,thr0):
-        sub = img[img<thr0]
-        supra = img[img>=thr0]
+    def DiffThr(img, thr0):
+        sub = img[img < thr0]
+        supra = img[img >= thr0]
         thr = 0.5*(np.mean(sub) + np.mean(supra))
         return thr
 
-    if (len(np.shape(thr0))==0) or (len(thr0)==0):
+    if (len(np.shape(thr0)) == 0) or (len(thr0) == 0):
         thr0 = threshold_otsu(img)
 
     count = 0
-    thr1 = DiffThr(img,thr0)
+    thr1 = DiffThr(img, thr0)
     dThr = np.abs(thr1-thr0)
     while (dThr > tol) & (count < nIter_max):
         thr = thr1
-        thr1 = DiffThr(img,thr)
+        thr1 = DiffThr(img, thr)
         dThr = np.abs(thr1-thr)
         count = count + 1
-#        print('Iter #', str(count), 'dThr = ', str(dThr*100))
     return thr1
+
 
 def getNumTimePoints(inDir):
     """ nTimePts = getNumTimePoints(inDir)
         Reads Stack_frequency.txt to return the number of temporal stacks
     """
-    import os
-    fp = os.path.join(inDir,'Stack_frequency.txt')
+    fp = os.path.join(inDir, 'Stack_frequency.txt')
     with open(fp) as file:
         nTimePts = int(file.readlines()[2])
     return nTimePts
+
 
 def getStackDims(inDir):
     """ Parse xml file to get dimension information of experiment.
     Returns [x,y,z] dimensions as a list of ints
     """
     import xml.etree.ElementTree as ET
-
     dims = ET.parse(inDir+'ch0.xml')
-    import os
-    fp = os.path.join(inDir,'ch0.xml')
+    fp = os.path.join(inDir, 'ch0.xml')
     dims = ET.parse(fp)
     root = dims.getroot()
-
     for info in root.findall('info'):
         if info.get('dimensions'):
             dims = info.get('dimensions')
-
     dims = dims.split('x')
     dims = [int(float(num)) for num in dims]
-
     return dims
+
 
 def getStackFreq(inDir):
     """Get the temporal data from the Stack_frequency.txt file found in
@@ -402,12 +412,13 @@ def getStackFreq(inDir):
 
     # third value should be an integer
     times[2] = int(times[2])
-
     return times
 
+
 def getStackData(rawPath, frameNo=0):
-    """Given rawPath, a path to .stack files, and frameNo, an int, load the .stack file
-    for the timepoint given by frameNo from binary and return as a numpy array with dimensions=x,y,z"""
+    """Given rawPath, a path to .stack files, and frameNo, an int, load the
+    .stack file for the timepoint given by frameNo from binary and return as a
+    numpy array with dimensions=x,y,z"""
 
     import numpy as np
     from string import Template
@@ -417,47 +428,44 @@ def getStackData(rawPath, frameNo=0):
     nDigits = 5
 
     tmpFName = fName.substitute(x=str(frameNo).zfill(nDigits))
-    im = np.fromfile(rawPath + tmpFName,dtype='int16')
+    im = np.fromfile(rawPath + tmpFName, dtype='int16')
     im = im.reshape(dims[-1::-1])
     return im
 
+
 class img(object):
     def convertBmp2Jpg(imgDir):
-        '''
-        convertBmp2Jpg - Given an image dir (path), converts all .bmp images within
-            to .jpg images
-            '''
-        import time, os
-        #import multiprocessing
+        '''Given an image dir (path), converts all .bmp images within to
+         .jpg images '''
+        import time
         from PIL import Image
-        #from joblib import Parallel, delayed
+
         def bmp2Jpg(bmpPath):
             targetPath = bmpPath.split('.')[0] + '.jpg'
-            #im = Image.open(bmpPath).convert('RGB')
             im = Image.open(bmpPath)
-            im.save(targetPath,format = 'jpeg')
+            im.save(targetPath, format='jpeg')
             im.close()
             try:
                 os.remove(bmpPath)
-            except:
+            except RuntimeError:
                 print('Unable to delete...', bmpPath)
 
         tic = time.time()
         print('Getting .bmps in dir...')
-        bmpsInDir= img.getImgsInDir(imgDir,imgExts=['.bmp'])
+        bmpsInDir = img.getImgsInDir(imgDir, imgExts=['.bmp'])
         bmpPaths = [os.path.join(imgDir, bmp) for bmp in bmpsInDir]
         print('Converting .bmps to .jpgs...')
         jpgPaths = [bmp2Jpg(bmpPath) for bmpPath in bmpPaths]
         print(int((time.time()-tic)/60), 'mins')
         return jpgPaths
 
-    def cropImgsAroundPoints(I,pts, cropSize = 100, keepSize = True,
-                             n_jobs = 32, verbose = 0, pad_type = 'zero'):
+    def cropImgsAroundPoints(images, pts, cropSize=100, keepSize=True,
+                             n_jobs=32, verbose=0, pad_type='zero'):
         '''
         Crops an image stack around fish position coordinates
         Parameters
         ----------
-        I: 3D array, shape = (T,M,N)
+        images: 3D array, shape = (T,M,N)
             Image stack with T images that needs to be cropped
         pts: 2D array, shape = (T,2)
             Coordinates of each point within each image; 1st and 2nd columns are x- and y- coordinates
@@ -479,23 +487,25 @@ class img(object):
             Cropped image stack
 
         '''
-        import numpy as np
-        if np.size(cropSize)==1:
+        if np.size(cropSize) == 1:
             cropSize = np.array([cropSize, cropSize])
-        def cropImgAroundPt(img,pt,cropSize,keepSize):
-            pt = np.fliplr(np.array(pt).reshape(1,-1)).flatten().astype(int) # Change from x,y to row,col coordinates
+
+        def cropImgAroundPt(img, pt, cropSize, keepSize):
+            # --- Change from x,y to row,col coordinates
+            pt = np.fliplr(np.array(pt).reshape(1, -1)).flatten().astype(int)
             pre = int(cropSize[0]/2)
             post = cropSize[0]-pre
-            r = np.arange(np.max([0,pt[0]-pre]),
-                          np.min([img.shape[0],pt[0]+post]))
+            r = np.arange(np.max([0, pt[0]-pre]),
+                          np.min([img.shape[0], pt[0]+post]))
             pre = int(cropSize[1]/2)
             post = cropSize[1]-pre
-            c = np.arange(np.max([0,pt[1]-pre]),
-                          np.min([img.shape[1],pt[1] + post]))
-            img_crop = img[r.reshape(-1,1),c]
+            c = np.arange(np.max([0, pt[1]-pre]),
+                          np.min([img.shape[1], pt[1] + post]))
+            img_crop = img[r.reshape(-1, 1), c]
             if keepSize:
                 d = np.c_[(cropSize)-np.array(img_crop.shape)]
-                d = np.max(np.concatenate((np.zeros(d.shape),d),axis =1),axis = 1).astype(int)
+                d = np.max(np.concatenate((np.zeros(d.shape), d), axis=1),
+                           axis=1).astype(int)
                 pw = ((int(d[0]/2), d[0]-int(d[0]/2)),
                       (int(d[1]/2), d[1]-int(d[1]/2)))
             if (pad_type == 'nan') | (pad_type == 'zero'):
@@ -504,24 +514,27 @@ class img(object):
                     const_val = np.nan
                 else:
                     const_val = 0
-                img_crop =  np.pad(img_crop, pad_width = pw, mode = mode, constant_values = const_val)
+                img_crop = np.pad(img_crop, pad_width=pw, mode=mode, constant_values=const_val)
             elif pad_type == 'edge':
-                img_crop = np.pad(img_crop, pad_width = pw, mode = pad_type)
+                img_crop = np.pad(img_crop, pad_width=pw, mode=pad_type)
 
             return img_crop
-        if np.ndim(I)==2:
-            I = I[np.newaxis,...]
+        if np.ndim(images)==2:
+            images = images[np.newaxis,...]
 
         pts = np.array(pts).reshape(-1,2)
-        if len(pts)< len(I):
-            pts = np.tile(np.array(pts),(len(I),1))
+        if len(pts) < len(images):
+            pts = np.tile(np.array(pts),(len(images),1))
 
-        if (n_jobs > 1) & (n_jobs > I.shape[0]):
+        if (n_jobs > 1) & (n_jobs > images.shape[0]):
             from joblib import Parallel, delayed
-            I_crop = Parallel(n_jobs = n_jobs, verbose= verbose)(delayed(cropImgAroundPt)(img,pt, cropSize, keepSize)
-            for img, pt in zip(I, pts))
+            parallel = Parallel(n_jobs=n_jobs, verbose=verbose)
+            I_crop = parallel(delayed(cropImgAroundPt)(img, pt, cropSize,
+                                                       keepSize)
+                               for img, pt in zip(images, pts))
         else:
-            I_crop = [cropImgAroundPt(img, pt, cropSize, keepSize) for img, pt in zip(I, pts)]
+            I_crop = [cropImgAroundPt(img, pt, cropSize, keepSize) for
+                      img, pt in zip(images, pts)]
         return np.squeeze(np.array(I_crop))
 
     def findCentroid(img):
@@ -535,19 +548,19 @@ class img(object):
         cent: tuple, (2,)
             Centroid
         """
-        import numpy as np
-        r, c = np.where(img!=None)
+        r, c = np.where(img != None)
         wts = img.flatten()
         wts = wts/wts.sum()
         r_cent, c_cent = np.sum(r*wts), np.sum(c*wts)
         return (c_cent, r_cent)
 
-    def findHighContrastPixels(I, zScoreThr = 1, method = 1):
+    def findHighContrastPixels(images, zScoreThr=1, method=1):
         '''
-        findHighContrastPixels - Finds high contrast pixels within an image I (mean of x and y gradients method)
-        pxlInds = findHighContrastPixels(I,zScoreThr = 1)
+        findHighContrastPixels - Finds high contrast pixels within an image images
+            (mean of x and y gradients method)
+        pxlInds = findHighContrastPixels(images,zScoreThr = 1)
         Inputs:
-        I - Image in which to find pixels
+        images - Image in which to find pixels
         zScoreThr - Threshold in zscore for a pixel intensity to be considered high contrast
         Outputs:
         edgeInds - Indices of high contrast pixels (i.e., edges)
@@ -557,10 +570,10 @@ class img(object):
         '''
         import numpy as np
         if method ==1:
-            I_grad = np.abs(np.gradient(I))
+            I_grad = np.abs(np.gradient(images))
             I_grad = (I_grad[0] + I_grad[1])/2
         else:
-            I_grad = np.gradient(I)
+            I_grad = np.gradient(images)
             I_grad =  (I_grad[0]**2 + I_grad[1]**2)**0.5
         thr  = np.mean(I_grad) + zScoreThr*np.std(I_grad)
         edgeInds = np.where(I_grad > thr)
@@ -580,9 +593,9 @@ class img(object):
         import os
 
         if len(imgExts) == 0:
-            imgExts = ['.jpg','.jpeg','.tif','.tiff','.bmp','.png']
-        if len(addImgExts) !=0:
-            imgExts= list(np.union1d(imgExts,addImgExts))
+            imgExts = ['.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.png']
+        if len(addImgExts) != 0:
+            imgExts = list(np.union1d(imgExts, addImgExts))
         imgsInDir = []
         thingsInDir= os.listdir(imgDir)
         for ext in imgExts:
@@ -590,7 +603,7 @@ class img(object):
             imgsInDir = list(np.union1d(imgsInDir,blah))
         return imgsInDir
 
-    def gray2rgb(img,cmap = 'gray'):
+    def gray2rgb(img, cmap='gray'):
         """ Given a grayscale image, returns rgb equivalent
         Inputs:
         cmap - Colormap; can be specified as 'gray', 'jet',
@@ -599,18 +612,17 @@ class img(object):
         import matplotlib.pyplot as plt
         import numpy as np
 
-        def standardize(x):
-            x = (x-x.min())/(x.max()-x.min())
-
-        if np.abs(img).max()>1:
+        def standardize(x): return (x-x.min())/(x.max()-x.min())
+        if np.abs(img).max() > 1:
             img = standardize(img)
         cmap = plt.get_cmap(cmap)
-        img_rgb = np.delete(cmap(img),3,2)
+        img_rgb = np.delete(cmap(img), 3, 2)
         return img_rgb
 
-    def histeq(img,nBins = 256):
+    def histeq(img, nBins=256):
         '''
-        Equalize the histogram of a grayscale image (similiar to MATLAB 'histeq')
+        Equalize the histogram of a grayscale image (similiar to MATLAB
+        'histeq')
         Parameters
         img : array-like
             Image array whose histogram is to be equalized
@@ -621,29 +633,23 @@ class img(object):
         img_eq : array-like
             Histogram-equalized image
         '''
-        import numpy as np
-
         # Get image histogram
-        imhist,bins = np.histogram(img.flatten(), nBins, normed = True)
-        cdf = imhist.cumsum() # cumulative distribution function
-        cdf = 255*cdf/cdf[-1] # normalize
+        imhist, bins = np.histogram(img.flatten(), nBins, normed=True)
+        cdf = imhist.cumsum()  # cumulative distribution function
+        cdf = 255*cdf/cdf[-1]   # normalize
 
         # User linear interpolation of cdf to find new pixel values
-        img2 = np.interp(img.flatten(),bins[:-1],cdf)
-
+        img2 = np.interp(img.flatten(), bins[:-1], cdf)
         return img2.reshape(img.shape), cdf
 
-
-
-    def filtImgs(I,filtSize = 5, kernel = 'median',
-                 process = 'parallel', verbose = 1):
+    def filtImgs(images, filtSize=5, kernel='median', process='parallel',
+                 verbose=1):
         '''
         Processes images so as to make moving particle tracking easier
-        I_proc = processImagesForTracking(I,filtSize = 5)
+        I_proc = processImagesForTracking(images, filtSize=5)
         Parameters
         ----------
-        I: 3D array of shape (T,M,N), where T = # of images, M, N = # of rows
-            and columns respectively
+        images: 3D array of shape (nImages, nRows, nCols)
             Image stack to filter
         kernel: String or 2D array
             ['median'] | 'rect' | 'gauss' or array specifying the kernel
@@ -651,103 +657,114 @@ class img(object):
             Size of the kernel to generate if kernel is string
         '''
         from scipy import signal
-        import numpy as np
         import apCode.SignalProcessingTools as spt
-        #import time
 
         if process.lower() == 'parallel':
             from joblib import Parallel, delayed
             import multiprocessing
             parFlag = True
-            num_cores = np.min((multiprocessing.cpu_count(),32))
+            num_cores = np.min((multiprocessing.cpu_count(), 32))
         else:
             parFlag = False
-        #tic = time.time()
-        if np.ndim(I)<3:
-            I = I[np.newaxis,:,:]
-        N = np.shape(I)[0]
+        if np.ndim(images) < 3:
+            images = images[np.newaxis, :, :]
+        N = np.shape(images)[0]
 
-        I_flt = np.zeros(np.shape(I))
+        I_flt = np.zeros(np.shape(images))
         if isinstance(kernel, str):
-            if kernel.lower()=='median':
-                #print('Median filtering...')
-                if np.size(filtSize)>1:
+            if kernel.lower() == 'median':
+                if np.size(filtSize) > 1:
                     filtSize = filtSize[0]
-                if np.mod(filtSize,2)==0:
-                    filtSize = filtSize+1 # For median, the filter size should be odd
-                    print('Median filter size must be odd, changed to {}'.format(filtSize))
+                if np.mod(filtSize, 2) == 0:
+                    #  For median, the filter size should be odd
+                    filtSize = filtSize + 1
+                    print(f'Median filter size must be odd,' +
+                          ' changed to {filtSize}')
                 if parFlag:
                     print('# of cores = {}'.format(num_cores))
-                    I_flt = Parallel(n_jobs = num_cores,verbose = verbose)(delayed(signal.medfilt2d)(img,filtSize) for img in I)
+                    parallel = Parallel(n_jobs=num_cores, verbose=verbose)
+                    I_flt = parallel(delayed(signal.medfilt2d)(img, filtSize)
+                                     for img in images)
                     I_flt = np.array(I_flt)
                 else:
-                    for imgNum, img in enumerate(I):
-                        if np.mod(imgNum,300)==0:
-                            print('Img # {0}/{1}'.format(imgNum,N))
-                        I_flt[imgNum,:,:] = signal.medfilt2d(img,filtSize)
+                    for imgNum, img in enumerate(images):
+                        if np.mod(imgNum, 300) == 0:
+                            print('Img # {0}/{1}'.format(imgNum, N))
+                        I_flt[imgNum, :, :] = signal.medfilt2d(img, filtSize)
             elif kernel.lower() == 'rect':
-                #print('Rectangular filtering...')
-                if np.size(filtSize)==1:
-                    ker = np.ones((filtSize,filtSize))
+                if np.size(filtSize) == 1:
+                    ker = np.ones((filtSize, filtSize))
                 else:
                     ker = np.ones(filtSize)
                 ker = ker/ker.sum()
-                ker = ker[np.newaxis,:,:]
+                ker = ker[np.newaxis, :, :]
                 if parFlag:
-                    I_flt = Parallel(n_jobs = num_cores,verbose = verbose)(delayed(signal.convolve)(img,ker, mode = 'same') for img in I)
+                    parallel = Parallel(n_jobs=num_cores, verbose=verbose)
+                    del_func = delayed(signal.convolve)
+                    I_flt = parallel(del_func(img, ker, mode='same')
+                                     for img in images)
                 else:
-                    I_flt = signal.convolve(I,ker,mode = 'same')
-            elif kernel.lower()=='gauss':
-                #print('Gaussian filtering...')
-                if np.size(filtSize)==1:
+                    I_flt = signal.convolve(images, ker, mode='same')
+            elif kernel.lower() == 'gauss':
+                if np.size(filtSize) == 1:
                     ker = spt.gausswin(filtSize)
-                    ker = ker.reshape((-1,1))
+                    ker = ker.reshape((-1, 1))
                     ker = ker*ker.T
                 else:
-                    ker1 = spt.gausswin(filtSize[0]).reshape((-1,1))
-                    ker2 = spt.gausswin(filtSize[0]).reshape((-1,1))
+                    ker1 = spt.gausswin(filtSize[0]).reshape((-1, 1))
+                    ker2 = spt.gausswin(filtSize[0]).reshape((-1, 1))
                     ker = ker1*ker2.T
                 ker = ker/ker.sum()
                 if parFlag:
-                    I_flt = Parallel(n_jobs = num_cores,verbose = verbose)(delayed(signal.convolve)(img,ker, mode = 'same') for img in I)
+                    parallel = Parallel(n_jobs=num_cores, verbose=verbose)
+                    del_func = delayed(signal.convolve)
+                    I_flt = parallel(del_func(img, ker, mode='same')
+                                     for img in images)
                     I_flt = np.array(I_flt)
                 else:
-                    ker= ker[np.newaxis,:,:]
-                    I_flt = signal.convolve(I,ker,mode = 'same')
+                    ker = ker[np.newaxis, :, :]
+                    I_flt = signal.convolve(images, ker, mode='same')
         else:
             ker = ker/ker.sum()
             if parFlag:
-                I_flt = Parallel(n_jobs = num_cores,verbose = 5)(delayed(signal.convolve)(img,ker) for img in I)
+                parallel = Parallel(n_jobs=num_cores, verbose=5)
+                del_func = delayed(signal.convolve)
+                I_flt = parallel(del_func(img, ker) for img in images)
             else:
-                ker= ker[np.newaxis,:,:]
-                I_flt = signal.convolve(I,ker,mode = 'same')
+                ker = ker[np.newaxis, :, :]
+                I_flt = signal.convolve(images, ker, mode='same')
 
-        #print(int(time.time()-tic), 'sec')
-        if np.shape(I_flt)[0]==1:
+        if np.shape(I_flt)[0] == 1:
             I_flt = np.squeeze(I_flt)
-
         return I_flt
 
-    def gaussFilt(I, sigma = 3, mode= 'nearest', n_jobs = 32, verbose = 0, preserve_range = True):
+    def gaussFilt(images, sigma=3, mode='nearest', n_jobs=32,
+                  verbose=0, preserve_range=True):
         """
-        Applies skimage.filters.gaussian to an image stack using parallel loop for speed.
+        Applies skimage.filters.gaussian to an image stack using parallel loop
+        for speed.
         """
-        import numpy as np
         from joblib import Parallel, delayed
         from skimage.filters import gaussian
-        if np.ndim(I)==2:
-            I = I[np.newaxis,...]
-        if n_jobs >1:
+        if np.ndim(images) == 2:
+            images = images[np.newaxis, ...]
+        if n_jobs > 1:
             try:
-                import dask
-                I_flt = np.array(dask.compute(*[dask.delayed(gaussian)(img, sigma=sigma, mode=mode, preserve_range=preserve_range) for img in I], scheduler='processes'))
-            except:
+                I_flt = [dask.delayed(gaussian)(img, sigma=sigma, mode=mode,
+                         preserve_range=preserve_range) for img in images]
+                I_flt = np.array(dask.compute(*I_flt, scheduler='processes'))
+            except RuntimeError:
                 print('Dask failed, attempting with joblib...')
-                I_flt = np.array(Parallel(n_jobs=n_jobs, verbose=verbose)(delayed(gaussian)(img, sigma=sigma, mode=mode, preserve_range=preserve_range) for img in I))
+                parallel = Parallel(n_jobs=n_jobs, verbose=verbose)
+                del_func = delayed(gaussian)
+                I_flt = parallel(del_func(img, sigma=sigma, mode=mode,
+                                          preserve_range=preserve_range)
+                                 for img in images)
+                I_flt = np.array(I_flt)
         else:
             print('Parallel processing failed, trying serially...')
             I_flt = np.array([gaussian(img, sigma=sigma, mode=mode,
-                                       preserve_range=True) for img in I])
+                                       preserve_range=True) for img in images])
         return np.squeeze(I_flt)
 
     def otsu(img, binary=False, mult=1):
@@ -854,25 +871,25 @@ class img(object):
                 imgPaths = [os.path.join(imgDir, img) for img in imgNames]
 
         dispChunk = int(len(imgPaths)/5)
-        I=[]
+        images=[]
         count = 0
         if n_jobs < 2:
             for img in imgPaths:
-                I.append(imread(img))
+                images.append(imread(img))
                 count = count + 1
                 if np.mod(count,dispChunk)==0:
                     print(str(count) + '/' + str(len(imgPaths)), '\t')
         else:
             n_jobs = np.min((mp.cpu_count(),n_jobs))
             try:
-                I = Parallel(n_jobs = n_jobs, verbose=verbose)(delayed(imread)(img) for img in imgPaths)
+                images = Parallel(n_jobs = n_jobs, verbose=verbose)(delayed(imread)(img) for img in imgPaths)
             except:
                 import dask
-                I = dask.compute(*[dask.delayed(imread)(ip) for ip in imgPaths])
-        I = np.array(I)
-        return I
+                images = dask.compute(*[dask.delayed(imread)(ip) for ip in imgPaths])
+        images = np.array(images)
+        return images
 
-    def resize(I, sz, n_jobs = 32, verbose = 0,preserve_dtype = True,**kwargs):
+    def resize(images, sz, n_jobs = 32, verbose = 0,preserve_dtype = True,**kwargs):
         """
         Resize an image array using PIL. For detailed help see 'resize' in PIL
         Parameters
@@ -902,17 +919,17 @@ class img(object):
 
         preserve_range = kwargs.get('preserve_range',True)
         kwargs['preserve_range'] = preserve_range
-        if np.ndim(I)==2:
-            I_rs = resize(I,sz,**kwargs)
+        if np.ndim(images)==2:
+            I_rs = resize(images,sz,**kwargs)
         else:
             if n_jobs >1:
                 from joblib import Parallel, delayed
-                I_rs = Parallel(n_jobs= n_jobs, verbose = verbose)(delayed(resize)(im,sz,**kwargs) for im in I)
+                I_rs = Parallel(n_jobs= n_jobs, verbose = verbose)(delayed(resize)(im,sz,**kwargs) for im in images)
             else:
-                I_rs =[resize(im,sz, **kwargs) for im in I]
+                I_rs =[resize(im,sz, **kwargs) for im in images]
         I_rs = np.array(I_rs)
         if preserve_dtype:
-            I_rs = I_rs.astype(I.dtype)
+            I_rs = I_rs.astype(images.dtype)
         return I_rs
 
     def resize_discrete(images, sz):
@@ -960,36 +977,36 @@ class img(object):
             return np.dot(img[...,:3],[0.299, 0.587, 0.114])
         return [rgb2g(img) for img in I_stack]
 
-    def rgba2rgb(I):
+    def rgba2rgb(images):
         """"
         Given an rgba image stack, where a is the alpha channel, returns an rgb
             image scaled by the alphas in the alpha channel. This can be useful
             for opening using ImageJ
         Parameters:
-        I - array-like of shape(z,m,n,4), where z is the number of image slices,
+        images - array-like of shape(z,m,n,4), where z is the number of image slices,
             m, n are the rows and columns of each image, and 4 corresponds to the
             r,g,b, and a (alpha) channels respectively.
         Returns:
-        I - array-like, shape = (z, m, n, 3)
+        images - array-like, shape = (z, m, n, 3)
         """
         import numpy as np
         import sys
-        if isinstance(I, list):
-            I = np.array(I)
-        if np.shape(I)[-1] <4:
+        if isinstance(images, list):
+            images = np.array(images)
+        if np.shape(images)[-1] <4:
             print('Image must have 3 color and 1 alpha channel')
             sys.exit()
-        elif np.ndim(I) ==3:
-            I = I[np.newaxis,:,:,:]
-        elif np.ndim(I)<3:
+        elif np.ndim(images) ==3:
+            images = images[np.newaxis,:,:,:]
+        elif np.ndim(images)<3:
             print('RGB image must have at least 3 dimensions')
             sys.exit()
-        alphaMask = I[:,:,:,-1]
+        alphaMask = images[:,:,:,-1]
         alphaMask = np.tile(alphaMask[:,:,:,np.newaxis],[1,1,1,3])
-        I_rgb = I[:,:,:,:3]*alphaMask
+        I_rgb = images[:,:,:,:3]*alphaMask
         return I_rgb
 
-    def rotate(I, angle, n_jobs:int = 32, verbose:int =0, preserve_dtype:bool = True,**kwargs):
+    def rotate(images, angle, n_jobs:int = 32, verbose:int =0, preserve_dtype:bool = True,**kwargs):
         """
         Wrapper for applying skimage.transform.rotate to an image stack
         """
@@ -1004,8 +1021,8 @@ class img(object):
                 return img.astype(dtype)
             return wrapper_func
 
-        if np.ndim(I) ==2:
-            I = I[np.newaxis,...]
+        if np.ndim(images) ==2:
+            images = images[np.newaxis,...]
         kwargs['preserve_range'] = kwargs.get('preserve_range', True)
         kwargs['mode'] = kwargs.get('mode','wrap')
 
@@ -1013,24 +1030,24 @@ class img(object):
             rotate = wrap_rot(rotate)
 
         if n_jobs <2:
-            I_rot = np.array([rotate(img,angle,**kwargs) for img in I])
+            I_rot = np.array([rotate(img,angle,**kwargs) for img in images])
         else:
             try:
                 I_rot = np.array(Parallel(n_jobs=n_jobs, verbose=verbose)(delayed(rotate)
-                (img,angle,**kwargs) for img in I))
+                (img,angle,**kwargs) for img in images))
             except:
                 import dask
-                I_rot = np.array(dask.compute(*[dask.delayed(rotate)(img,angle,**kwargs) for img in I]))
+                I_rot = np.array(dask.compute(*[dask.delayed(rotate)(img,angle,**kwargs) for img in images]))
         return np.squeeze(I_rot)
 
-    def saveImages(I,imgDir = [], imgNames =[], fmt = 'bmp', cmap = 'gray',
+    def saveImages(images,imgDir = [], imgNames =[], fmt = 'bmp', cmap = 'gray',
                    dispChunk = None, n_jobs = 20, verbose = 0):
         """
         Saves an image stack
 
         Parameters
         ----------
-        I: (m,n,k), array-like
+        images: (m,n,k), array-like
             Image stack to save
         imgDir: string
             Path to directory where images are to be saved
@@ -1052,29 +1069,29 @@ class img(object):
         else:
             imsave = plt.imsave
 
-        if np.ndim(I)==2:
-            I = I[np.newaxis,...]
+        if np.ndim(images)==2:
+            images = images[np.newaxis,...]
 
         if len(imgDir)==0:
             imgDir = os.getcwd()
         elif os.path.exists(imgDir) == False:
             os.mkdir(imgDir)
         if len(imgNames)==0:
-            imgNames = ('Img' + '%.6d' % num + '.' + fmt for num in range(np.shape(I)[0]))
+            imgNames = ('Img' + '%.6d' % num + '.' + fmt for num in range(np.shape(images)[0]))
         if dispChunk == None:
             dispChunk = np.inf
         else:
-            dispChunk = int((np.shape(I)[0])/30)
+            dispChunk = int((np.shape(images)[0])/30)
 
-        if (I.shape[0]<n_jobs):
+        if (images.shape[0]<n_jobs):
             for imgNum,imgName in enumerate(imgNames):
                 filePath = os.path.join(imgDir,imgName)
-                imsave(filePath,I[imgNum])
+                imsave(filePath,images[imgNum])
 #                if np.mod(imgNum,dispChunk)==0:
 #                    print(imgNum)
         else:
             from joblib import Parallel, delayed
-            Parallel(n_jobs = n_jobs, verbose = verbose)(delayed(imsave)(os.path.join(imgDir,imgName),img) for imgName,img in zip(imgNames,I))
+            Parallel(n_jobs = n_jobs, verbose = verbose)(delayed(imsave)(os.path.join(imgDir,imgName),img) for imgName,img in zip(imgNames,images))
 
     def make_video(images, outvid=None, fps=5, size=None,
                    is_color=True, format="XVID"):
@@ -1206,7 +1223,8 @@ class morphology():
     __sys.path.append(__codeDir)
     import apCode.geom as __geom
     endpoints_curve_2d = __geom.endpoints_curve_2d
-    def neighborhood(img,coords, n = 1):
+
+    def neighborhood(img,coords, n=1):
         """
         Returns the neighborhood in an image
         Parameters
@@ -1232,80 +1250,75 @@ class morphology():
             N[k,1,3] gives the column indices.
         """
         import numpy as np
-        if np.size(coords)==2:
+        if np.size(coords) == 2:
             coords = [coords]
-        P,N = [],[]
-        for r,c in coords:
-            inds = np.array([np.arange(r-n,r+n+1),np.arange(c-n,c+n+1)])
-            rowInds = np.where((inds[0] >=0) & (inds[0] < img.shape[0]))[0]
-            colInds = np.where((inds[1]>=0) & (inds[1] < img.shape[1]))[0]
-            keepInds = np.intersect1d(rowInds,colInds)
-            inds = inds[:,keepInds]
-            rr,cc = np.meshgrid(inds[0],inds[1])
-            p = img[rr.astype(int),cc.astype(int)]
+        P, N = [], []
+        for r, c in coords:
+            inds = np.array([np.arange(r-n, r+n+1), np.arange(c-n, c+n+1)])
+            rowInds = np.where((inds[0] >= 0) & (inds[0] < img.shape[0]))[0]
+            colInds = np.where((inds[1] >= 0) & (inds[1] < img.shape[1]))[0]
+            keepInds = np.intersect1d(rowInds, colInds)
+            inds = inds[:, keepInds]
+            rr, cc = np.meshgrid(inds[0], inds[1])
+            p = img[rr.astype(int), cc.astype(int)]
             N.append(inds)
             P.append(p)
-        return P,N
+        return P, N
 
-    def thin_weighted(img, nhood = 4, points = None):
+    def thin_weighted(img, nhood=4, points=None):
         """
         Returns the x,y coordinates of the thinned line resulting from
         skimage.morphology.thin, but after weighting with pixel intensity
         Parameters
         ---------
         img: 2D array (M,N)
-            Imge to thin
+            Image to thin
         nhood: scalar
             Neighborhood of pixel weighting
         points: array, (K,2)
-            Points to be weighted. If None or [], them uses thinning obtain this
-            information. However, it weighting needs to be done iteratively,
-            then it helps to have these points
-
+            Points to be weighted. If None or [], them uses thinning obtain
+            this information. However, it weighting needs to be done
+            iteratively, then it helps to have these points
         Returns
         -------
         xy: array, (2,N)
             xy[0], and xy[1] are the x and y coordinates respectively of the
             thinned lines in image
             """
-
         from skimage.morphology import thin
-        import numpy as np
-        def row_wts(img,r,c,nhood):
+
+        def row_wts(img, r, c, nhood):
             nRows = np.shape(img)[0]
             x = np.arange(r-nhood, r+nhood+1)
             y = np.ones((len(x),))*c
-            inds = np.array((x,y)).astype(int)
-            #inds = np.array([np.arange(r-nhood,r+nhood+1),[c]*(2*nhood+1)])
-            #inds = inds.astype(int)
-            keepInds = np.where((inds[0]>=0) & (inds[0]<nRows))[0]
-            inds = inds[:,keepInds]
-            wts = img[inds[0],inds[1]]
+            inds = np.array((x, y)).astype(int)
+            keepInds = np.where((inds[0] >= 0) & (inds[0] < nRows))[0]
+            inds = inds[:, keepInds]
+            wts = img[inds[0], inds[1]]
             wts = wts/np.sum(wts)
-            r_wt = np.dot(x[keepInds],wts)
+            r_wt = np.dot(x[keepInds], wts)
             return r_wt
-        def col_wts(img,r,c,nhood):
+
+        def col_wts(img, r, c, nhood):
             nCols = np.shape(img)[1]
             y = np.arange(c-nhood, c+nhood+1)
             x = np.ones((len(y),))*r
-            inds = np.array((x,y)).astype(int)
-            #inds = np.array([[r]*(2*nhood+1),np.arange(c-nhood,c+nhood+1)])
-            #inds = inds.astype(int)
-            keepInds = np.where((inds[1]>=0) & (inds[1]<nCols))[0]
-            inds = inds[:,keepInds]
-            wts = img[inds[0],inds[1]]
+            inds = np.array((x, y)).astype(int)
+            keepInds = np.where((inds[1] >= 0) & (inds[1] < nCols))[0]
+            inds = inds[:, keepInds]
+            wts = img[inds[0], inds[1]]
             wts = wts/np.sum(wts)
-            c_wt = np.dot(y[keepInds],wts)
+            c_wt = np.dot(y[keepInds], wts)
             return c_wt
-        if np.size(points)<2:
-            R,C = np.where(thin(img))
+        if np.size(points) < 2:
+            R, C = np.where(thin(img))
         else:
-            R, C = points[:,1], points[:,0]
+            R, C = points[:, 1], points[:, 0]
         xy = []
-        for r,c in zip(R,C):
-            r_wt = row_wts(img,r,c,nhood)
-            c_wt = col_wts(img,r,c,nhood)
-            xy.append([c_wt,r_wt])
+        for r, c in zip(R, C):
+            r_wt = row_wts(img, r, c, nhood)
+            c_wt = col_wts(img, r, c, nhood)
+            xy.append([c_wt, r_wt])
         return np.array(xy)
 
 
@@ -1338,7 +1351,9 @@ class plot(object):
             ax.add_patch(Ellipse(position, nsig * width, nsig * height,
                                  angle, **kwargs))
 
-def projFigure(vol, limits, plDims=[16,10,5], zscale=5, colors='gray', title=None):
+
+def projFigure(vol, limits, plDims=[16, 10, 5], zscale=5, colors='gray',
+               title=None):
 
     """Display vol.max(dim) - vol.min(dim) for dims in [0,1,2]
     Heavily adapted from Jason Wittenbach's crossSectionPlot.
@@ -1349,22 +1364,23 @@ def projFigure(vol, limits, plDims=[16,10,5], zscale=5, colors='gray', title=Non
     grid = (y+z, x+z)
     zRat = zscale*(float(y)/z)
     plt.figure(figsize=grid[-1::-1])
-
-    # plot the x-y view (top-down)
     ax1 = plt.subplot2grid(grid, (0, 0), rowspan=y, colspan=x)
-    plt.imshow(vol.max(0) + vol.min(0), clim=limits, cmap=colors, origin='leftcorner', interpolation='Nearest')
+    plt.imshow(vol.max(0) + vol.min(0), clim=limits, cmap=colors,
+               origin='leftcorner', interpolation='Nearest')
     ax1.axes.xaxis.set_ticklabels([])
 
     if title:
         plt.title(title)
 
     # plot the x-z view (side-on)
-    ax2 = plt.subplot2grid(grid, (y, 0),rowspan=z, colspan=x)
-    plt.imshow(vol.max(1)+vol.min(1), aspect=zRat, clim=limits, cmap=colors, origin='leftcorner', interpolation='Nearest')
+    plt.subplot2grid(grid, (y, 0), rowspan=z, colspan=x)
+    plt.imshow(vol.max(1)+vol.min(1), aspect=zRat, clim=limits, cmap=colors,
+               origin='leftcorner', interpolation='Nearest')
 
     # plot the y-z view (head-on)
     ax3 = plt.subplot2grid(grid, (0, x), rowspan=y, colspan=z)
-    plt.imshow((vol.max(2)+vol.min(2)).T, aspect=1/zRat, clim=limits, cmap=colors, origin='leftcorner', interpolation='Nearest')
+    plt.imshow((vol.max(2)+vol.min(2)).T, aspect=1/zRat, clim=limits,
+               cmap=colors, origin='leftcorner', interpolation='Nearest')
 
     ax3.axes.yaxis.set_ticklabels([])
 
@@ -1374,25 +1390,21 @@ def tToZStacks(inDir):
     tToZStacks(inDir):
     Writes the tStacks in 'inDir' to zStacks in 'inDir\\zStacks'
     '''
-    import sys, os
-    sys.path.insert(0, 'C:/Users/pujalaa/Documents/Code/Python/code/codeFromNV')
+    import sys
+    sys.path.insert(0,
+                    'C:/Users/pujalaa/Documents/Code/Python/code/codeFromNV')
     sys.path.insert(0, 'C:/Users/pujalaa/Documents/Code/Python/code/util')
     import time
     import numpy as np
     import volTools
 
     imgDir = inDir
-   # allFilesInDir = os.listdir(imgDir)
     fileExt = '.stack'
     fileStem = 'Plane'
-
-    #tStacks = np.sort(list(filter(lambda x: x.startswith(fileStem),\
-    # allFilesInDir)))
-
     stackDims = volTools.getStackDims(imgDir)
     nTimePts = volTools.getNumTimePoints(imgDir)
 
-    outDir = os.path.join(imgDir,'zStacks')
+    outDir = os.path.join(imgDir, 'zStacks')
     if os.path.isdir(outDir):
         print(outDir, '\n ...already exists!')
     else:
@@ -1403,20 +1415,20 @@ def tToZStacks(inDir):
     for stackNum in range(stackDims[2]):
         print('Reading plane ' + str(stackNum+1) + '...')
         fn = fileStem + '%0.2d' % (stackNum+1) + fileExt
-        fp = os.path.join(imgDir,fn)
-        blah = np.fromfile(fp,dtype = 'uint16')
-        blah = np.reshape(blah,(nTimePts,stackDims[1], stackDims[0]))
+        fp = os.path.join(imgDir, fn)
+        blah = np.fromfile(fp, dtype='uint16')
+        blah = np.reshape(blah, (nTimePts, stackDims[1], stackDims[0]))
         print('Writing plane ' + str(stackNum+1) + '...')
         for timePt in range(nTimePts):
             fn = 'TM' + '%0.05d' % timePt + '.bin'
-            fp = os.path.join(outDir,fn)
-            file = open(fp,'ab')
+            fp = os.path.join(outDir, fn)
+            file = open(fp, 'ab')
             file.write(blah[timePt])
             file.close()
-    print(int(time.time()-startTime)/60,'min')
+    print(int(time.time()-startTime)/60, 'min')
 
-def pol2cart(th,rho):
-    import numpy as np
+
+def pol2cart(th, rho):
     '''
     Transforms from polar to cartesian coordinates
     Parameters
@@ -1433,34 +1445,41 @@ def pol2cart(th,rho):
     '''
     x = rho * np.cos(th)
     y = rho * np.sin(th)
-    #x,y = np.round(x*1000)/1000, np.round(y*1000)/1000
     return np.array([x, y])
 
-def radiatingLinesAroundAPoint(pt, lineLength, dTheta = 15, dLine = 1):
+
+def radiatingLinesAroundAPoint(pt, lineLength, dTheta=15, dLine=1):
     '''
-    Given the coordinates of a point, returns the list of coordinates of a series of lines
-        radiating from that point
+    Given the coordinates of a point, returns the list of coordinates of a
+     series of lines radiating from that point
     lines = radiatingLinesAroundAPoint(pt, lineLength, dTheta = 15, dLine=1)
-    Inputs:
-    pt - x,y coordinates of a point from which the lines should radiate
-    lineLength - length in pixels of the the line segments
-    dTheta - angular spacing of the lines around the point. For instance setting
-        dTheta = 90, returns 4 lines at right angles to each other
-    dLine - Radial distance between points in the line     '''
+    Parameters
+    ----------
+    pt: tupe, (2,)
+        x,y coordinates of a point from which the lines should radiate
+    lineLength: int
+        Length in pixels of the the line segments
+    dTheta: scaler
+        Angular spacing of the lines around the point. For instance setting
+        if dTheta = 90, returns 4 lines at right angles to each other.
+    dLine: scalar
+        Radial distance between points in the line
+    '''
 
     import numpy as np
     lines = []
     xInds = []
     yInds = []
-    thetas = np.arange(0,360,dTheta)
-    lineLengths = np.arange(1,lineLength+1,dLine)
+    thetas = np.arange(0, 360, dTheta)
+    lineLengths = np.arange(1, lineLength+1, dLine)
     for theta in thetas:
-        inds = list(map(lambda x: pol2cart(x,theta), lineLengths))
+        inds = list(map(lambda x: pol2cart(x, theta), lineLengths))
         xInds = np.array(list(ind[0] for ind in inds)) + pt[0]
         yInds = np.array(list(ind[1] for ind in inds)) + pt[1]
         line = np.array([xInds, yInds])
         lines.append(line)
     return np.array(lines)
+
 
 class Register():
     """
@@ -1472,21 +1491,65 @@ class Register():
     verbose: integer
         See Parallel, delayed from joblib
     upsample_factor: scalar
-        Factor by which to upsample images before registration. This is useful either for subpixel
-        registration (upsample_factor > 1) or for speeding up registration (upsample_factor <1).
+        Factor by which to upsample images before registration. This is useful
+        either for subpixel registration (upsample_factor > 1) or for speeding
+        up registration (upsample_factor <1).
     backend: string, 'joblib' (default) or 'dask'
-        Backend to use in running registration. If 'joblib' uses Parallel, delayed with 'loky'
-        backend. If 'dask' then uses multithreading and dask
+        Backend to use in running registration. If 'joblib' uses Parallel,
+        delayed with 'loky' backend. If 'dask' then uses multithreading and
+        dask
     scheduler: string, 'threads' or 'processes' (default)
-        IFF backend == 'dask', this specifies the type of scheduler to use. See dask.compute
+        IFF backend == 'dask', this specifies the type of scheduler to use.
+        See dask.compute
     regMethod: string, 'st' (standard translation), 'cr' (caiman rigid), or
         'cpwr' (caiman piecewise rigid)
         Specifies the registration method. For more info on 'cr' or 'cpwr' see
         caiman.motion_correction.MotionCorrect(). 'st' is implemented using
         skimage.feature.register_translation.
     """
-    def __init__(self, n_jobs =32, verbose = 0, upsample_factor = 1, backend = 'dask',\
-                 scheduler = 'processes', regMethod = 'st', filtSize = None):
+    def __init__(self, n_jobs=32, verbose=0, upsample_factor=1, backend='dask',
+                 scheduler='processes', regMethod='st', filtSize=None,
+                 patchPerc=(20, ), patchOverlapPerc=(60, ),
+                 maxShiftPerc=(20, )):
+        """
+        Parameters
+        ----------
+        n_jobs: int
+            Number of parallel workers
+        verbose: int
+            Verbosity of Parallel workers.
+        backend: str, 'dask' or 'joblib'
+            Which parallel processing framework to use. If 'dask' then uses
+            dask intead of joblib's Parallel
+        scheduler: str, 'processes' or 'threads'
+            If backend = 'dask', then this determines whether to use parallel
+            processes or threads
+        regMethod: str, 'st', 'cr', 'cpwr'
+            Registration algorithm to use.
+            'st' - skimage translation
+            'cr' - caiman rigid (backend is still 'st', but there may be other
+                differences)
+            'cpwr' - caiman piecewise rigid
+        upsample_factor: scalar
+            If regMethod = 'st', them upsampling factor for images.
+        filtSize: None or scalar
+            Gaussian filter sigma for filtering before registering. The
+            filtering is only done to compute registration shifts. The
+            registered images wil not be filtered
+        patchPerc: tuple-like, (n,) where n = 1 or 2 or scalar
+            If regMethod = 'cpwr', then this determines the patch size in units
+            of percentage of the 1st and 2nd image dimensions. For example,
+            if image is M by N, then patchPerc = (10, 20) results in patchSize
+            = (M*10/100, N*20/100)
+            If patchPerc has only one element then uses symmetric patches
+            with size determined by smaller image dimension.
+        patchOverlapPerc: tuple-like or scalar (see patchPerc)
+            Percentage by which patch sizes overlap in each dimension.
+            For example, (60, 60) results in 60% (relative to patch dimensions)
+            overlap in patches. The stride then = patchSize - overlap
+        maxShiftPerc: tuple-like or scalar (see patchPerc)
+            Maximum shift allowed during registration
+        """
         self.n_jobs_ = n_jobs
         self._verbose = verbose
         self.upsample_factor_ = upsample_factor
@@ -1494,51 +1557,85 @@ class Register():
         self.scheduler_ = scheduler
         self.regMethod_ = regMethod
         self.filtSize_ = filtSize
+        self._patchPerc = patchPerc
+        self._patchOverlapPerc = patchOverlapPerc
+        self._maxShiftPerc = maxShiftPerc
 
-    def fit(self, I, ref = None):
+    @staticmethod
+    def correlate_to_ref(images, ref=None):
+        """Correlate images to a reference or images.mean(axis=0)
+        Parameters
+        ----------
+        images: array, (nImgs, *imgDims)
+            Image stack
+        ref: array, imgDims
+            Reference image to correlate each image with
+        Returns
+        -------
+        corrs: array, (nImgs,)
+            Correlations, such that corrs[i] = correlation(images[i], ref)
+        """
+
+        def corrImgs(img1, img2):
+            return np.corrcoef(img1.flatten(), img2.flatten())[0, 1]
+
+        if ref is None:
+            ref = images.mean(axis=0)
+        corrs = [dask.delayed(corrImgs)(img, ref) for img in images]
+        corrs = dask.compute(*corrs, scheduler='processes')
+        return corrs
+
+    def fit(self, images, ref=None):
         """
         Registers images against reference and returns translation coordinates
         from registration
         Parameters
         ----------
-        I: array, ([T,], M, N)
+        images: array, ([nTimePts,], nRows, nCols)
             Image stack to register
-        ref: array of shape (M, N) or None
-            Reference image to register against. If None, then uses mean of image stack along
-            first dimension (i.e. time).
+        ref: array of shape (nRwos, nCols) or None
+            Reference image to register against. If None, then uses mean of
+            image stack along first dimension (i.e. time).
         Returns
         -------
         regObj: object
-            Registration object with registration shifts stored in regObj.translation_coords_.
-            The method regObj.transform() will apply registration parameters computed from I
-            to other image stacks
+            Registration object with registration shifts stored in
+            regObj.translation_coords_. The method regObj.transform() will
+            apply registration parameters computed from images to other image
+            stacks
         """
         import numpy as np
-        from skimage.feature import register_translation
-        if np.ndim(I)<3:
-            I = I[np.newaxis,:,:]
+        from skimage.feature import register_translation as rt
+        if np.ndim(images) < 3:
+            images = images[np.newaxis, :, :]
 
-        if not self.filtSize_ is None:
-            I = img.gaussFilt(I, sigma = 1)
-        if np.any(ref == None):
-            ref = I.mean(axis = 0)
+        if self.filtSize_ is not None:
+            images = img.gaussFilt(images, sigma=1)
+        if ref is None:
+            ref = images.mean(axis=0)
         if self.regMethod_ == 'st':
-            # print('Registering with skimage translation...')
-            if self.n_jobs_ <=1:
-                shifts = np.array([register_translation(ref,img, upsample_factor = self.upsample_factor_)[0] for img in I])
+            if self.n_jobs_ <= 1:
+                shifts =\
+                    [rt(ref, img, upsample_factor=self.upsample_factor_)[0]
+                     for img in images]
+                shifts = np.array(shifts)
             else:
                 if self.backend_ == 'joblib':
                     from joblib import Parallel, delayed
                     from multiprocessing import cpu_count
                     self.n_jobs_ = np.min((self.n_jobs_, cpu_count()))
-                    shifts = Parallel(n_jobs = self.n_jobs_, verbose = self._verbose)\
-                    (delayed(register_translation)(ref, img) for img in I)
+                    shifts = Parallel(n_jobs=self.n_jobs_,
+                                      verbose=self._verbose)
+                    (delayed(rt)(ref, img) for img in images)
                     shifts = np.array([shift[0] for shift in shifts])
                 elif self.backend_ == 'dask':
                     import dask
-                    shifts_lazy = [dask.delayed(register_translation)\
-                                   (ref,img, upsample_factor = self.upsample_factor_) for img in I]
-                    foo = dask.compute(shifts_lazy, scheduler = self.scheduler_)[0]
+                    shifts_lazy = [dask.delayed(rt)
+                                   (ref, img,
+                                    upsample_factor=self.upsample_factor_)
+                                   for img in images]
+                    foo = dask.compute(shifts_lazy,
+                                       scheduler=self.scheduler_)[0]
                     shifts = np.array([_[0] for _ in foo])
                 else:
                     print('Please specify valid backend ("joblib" or "dask")')
@@ -1548,16 +1645,38 @@ class Register():
             import caiman as cm
             from caiman.motion_correction import MotionCorrect
             cm.stop_server()
-            n_processes = np.maximum(np.minimum(int(psutil.cpu_count()),I.shape[0]-2),1)
+            n_processes = np.maximum(np.minimum(int(psutil.cpu_count()),
+                                                images.shape[0]-2), 1)
             if 'dview' in locals():
-                cm.stop_server(dview = dview)
-            c, dview, n_processes = cm.cluster.setup_cluster(backend='local',\
-                                                             n_processes=n_processes, single_thread=False,\
-                                                             ignore_preexisting=True)
-            imgDims = np.array(I.shape[-2:])
-            strides = np.ceil(imgDims/3).astype(int)
-            overlaps = np.ceil(strides/1.5).astype(int)
-            max_shifts = np.ceil(imgDims/10).astype(int)
+                cm.stop_server(dview=dview)
+            c, dview, n_processes =\
+                cm.cluster.setup_cluster(backend='local',
+                                         n_processes=n_processes,
+                                         single_thread=False,
+                                         ignore_preexisting=True)
+            imgDims = np.array(images.shape[-2:])
+
+            def castToArr(x):
+                return np.array(x) * np.ones((2,))
+
+            if np.ndim(self._patchPerc) < 2:
+                patchSize = np.min(imgDims)*castToArr(self._patchPerc)/100
+            else:
+                patchSize = np.array(imgDims)*np.array(self._patchPerc)/100
+            if np.ndim(self._patchOverlapPerc) < 2:
+                overlaps = np.min(patchSize)*castToArr(self._patchOverlapPerc)
+                overlaps = overlaps/100
+            else:
+                overlaps = patchSize*np.array(self._patchOverlapPerc)/100
+            if np.ndim(self._maxShiftPerc) < 2:
+                max_shifts = np.min(imgDims)*castToArr(self._maxShiftPerc)
+                max_shifts = max_shifts/100
+            else:
+                max_shifts = (imgDims*np.array(self._maxShiftPerc)/100)
+            patchSize = patchSize.astype(int)
+            overlaps = overlaps.astype(int)
+            strides = patchSize - overlaps
+            max_shifts = max_shifts.astype(int)
             max_deviation_rigid = max_shifts[0]
             shifts_opencv = True
             border_nan = 'copy'
@@ -1565,76 +1684,90 @@ class Register():
                 pw_rigid = True
             else:
                 pw_rigid = False
-            mc = MotionCorrect(I, dview = dview, max_shifts= max_shifts,\
-                               strides=strides, overlaps= overlaps,\
-                               max_deviation_rigid= max_deviation_rigid,\
-                               nonneg_movie = True, border_nan=border_nan,\
-                               shifts_opencv=shifts_opencv, pw_rigid= pw_rigid)
+            mc = MotionCorrect(images, dview=dview, max_shifts=max_shifts,
+                               strides=strides, overlaps=overlaps,
+                               max_deviation_rigid=max_deviation_rigid,
+                               nonneg_movie=True, border_nan=border_nan,
+                               shifts_opencv=shifts_opencv, pw_rigid=pw_rigid)
             mc.motion_correct(save_movie=False, template=ref)
             attrs = mc.__dict__.keys()
             if 'x_shifts_els' in attrs:
-                shifts = np.array([mc.x_shifts_els, mc.y_shifts_els]).transpose(1,0,2)
+                shifts = np.array([mc.x_shifts_els, mc.y_shifts_els])
+                shifts = shifts.transpose(1, 0, 2)
             else:
                 shifts = np.array(mc.shifts_rig)
             self.apply_shifts_movie = mc.apply_shifts_movie
-            registration_constraints = dict(strides = strides,overlaps = overlaps,\
-                                            max_shifts = max_shifts,\
-                                            max_deviation_rigid = max_deviation_rigid)
+            registration_constraints = dict(strides=strides, overlaps=overlaps,
+                                            max_shifts=max_shifts)
+            registration_constraints['max_deviation_rigid'] =\
+                max_deviation_rigid
             self.registration_constraints_ = registration_constraints
-            cm.stop_server(dview = dview)
+            cm.stop_server(dview=dview)
         self.translation_coords_ = shifts
+        self.patchSize_ = patchSize
+        self.overlaps_ = overlaps
+        self.max_shifts_ = max_shifts
+        self.max_deviation_rigid_ = max_deviation_rigid
         return self
 
-    def transform(self,I):
+    def transform(self, images):
         """
         Register a stack of images using translation coordinates
         computed using the fit method
         Parameters
         ----------
-        I: array, ([T,], M, N)
-            Image to stack to which to apply registration parameters computed from the same or
-            a different image stack of similar dimensions (such as a different channel, for instance)
+        images: array, ([nTimePts,], nRows, nCols)
+            Image to stack to which to apply registration parameters computed
+            from the same or a different image stack of similar dimensions
+            (such as a different channel, for instance)
         Returns
         -------
-        I_shifted: array of shape(I)
+        I_shifted: array of shape(images)
             Registered image stack.
         """
-        import numpy as np
         from scipy.ndimage import fourier_shift
         from numpy.fft import fftn, ifftn
         import caiman as cm
         shifts = self.translation_coords_
-        f = lambda img,s: np.real(ifftn(fourier_shift(fftn(img),s)))
-        if np.ndim(I)<3:
-            I = I[np.newaxis, :, :]
-            shifts = np.array(shifts).reshape((1,-1))
+        def f(img, s): return np.real(ifftn(fourier_shift(fftn(img), s)))
+        if np.ndim(images) < 3:
+            images = images[np.newaxis, :, :]
+            shifts = np.array(shifts).reshape((1, -1))
         if (self.regMethod_ == 'cr') | (self.regMethod_ == 'cpwr'):
             if 'dview' in locals():
-                cm.stop_server(dview = dview)
-            c, dview, n_processes = cm.cluster.setup_cluster(backend = 'local',\
-                                                             n_processes=None, single_thread=False,\
-                                                             ignore_preexisting=True)
-            I_shifted = self.apply_shifts_movie(I)
-            cm.stop_server(dview = dview)
+                cm.stop_server(dview=dview)
+            c, dview, n_processes =\
+                cm.cluster.setup_cluster(backend='local', n_processes=None,
+                                         single_thread=False,
+                                         ignore_preexisting=True)
+            I_shifted = self.apply_shifts_movie(images)
+            cm.stop_server(dview=dview)
         else:
-            if self.n_jobs_ <=1:
-                I_shifted = [f(img,s) for img, s in zip(I, shifts)]
+            if self.n_jobs_ <= 1:
+                I_shifted = [f(img, s) for img, s in zip(images, shifts)]
             else:
                 if self.backend_ == 'joblib':
                     from joblib import Parallel, delayed
                     from multiprocessing import cpu_count
                     self.n_jobs_ = np.min((self.n_jobs_, cpu_count()))
-                    I_shifted = Parallel(n_jobs = self.n_jobs_, verbose = self._verbose)(delayed(f)(img, s) for img, s in zip(I, shifts))
+                    parallel = Parallel(n_jobs=self.n_jobs_,
+                                        verbose=self._verbose)
+                    I_shifted =\
+                        parallel(delayed(f)(img, s) for img, s in
+                                 zip(images, shifts))
                 elif self.backend_ == 'dask':
                     import dask
-                    I_lazy = [dask.delayed(f)(img, s) for img, s in zip(I, shifts)]
-                    I_shifted = dask.compute(I_lazy, scheduler = self.scheduler_, n_workers = self.n_jobs_)[0]
+                    I_lazy = [dask.delayed(f)(img, s) for img, s in
+                              zip(images, shifts)]
+                    I_shifted = dask.compute(I_lazy, scheduler=self.scheduler_,
+                                             n_workers=self.n_jobs_)[0]
                 else:
                     print('Please specify valid backend ("joblib" or "dask")')
                     I_shifted = None
         return np.squeeze(np.array(I_shifted))
 
-def threshold_multi(img, n  = 3):
+
+def threshold_multi(img, n=3):
     """
     Applies otsu iteratively to find multiple thresholds
     Parameters
@@ -1652,19 +1785,20 @@ def threshold_multi(img, n  = 3):
     """
     from skimage.filters import threshold_otsu as otsu
     import numpy as np
-    thr= np.zeros((n,))
+    thr = np.zeros((n,))
     img_thr = img.ravel()
     img_quant = (img*0).astype(int)
     thr_up = np.infty
     for n_ in range(n):
         thr[n_] = otsu(img_thr)
-        aboveInds = np.where((img>thr[n_]) & (img <= thr_up))
+        aboveInds = np.where((img > thr[n_]) & (img <= thr_up))
         thr_up = thr[n_]
         img_quant[aboveInds] = n-n_
-        img_thr = np.delete(img_thr,np.where(img_thr>thr[n_]))
+        img_thr = np.delete(img_thr, np.where(img_thr > thr[n_]))
     return thr, img_quant
 
-def volToNifti(vol, grid2world = None):
+
+def volToNifti(vol, grid2world=None):
     """
     Niftify volume and return transposed vol as well as
     Nifti1 vol object.
@@ -1684,6 +1818,6 @@ def volToNifti(vol, grid2world = None):
     import nibabel as nib
     if grid2world is None:
         grid2world = np.eye(4)
-    vol_nii = nib.Nifti1Image(np.transpose(vol,(2,1,0)), grid2world)
+    vol_nii = nib.Nifti1Image(np.transpose(vol, (2, 1, 0)), grid2world)
     vol = np.squeeze(vol_nii.get_data())
     return vol, vol_nii

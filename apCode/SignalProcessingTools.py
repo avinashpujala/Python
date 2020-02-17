@@ -4,6 +4,10 @@ Created on Tue Aug 04 14:06:13 2015
 
 @author: pujalaa
 """
+import numpy as np
+import scipy as sp
+import sys
+sys.path.append(r'V:/code/python/code')
 
 
 class AlignTimeseries(object):
@@ -109,7 +113,6 @@ class AlignTimeseries(object):
         Applies the best correlation parameters computed by self.fit to
         transform the timeseries in y.
         """
-        import numpy as np
         import dask
         if np.ndim(y) == 1:
             y = y[np.newaxis, :]
@@ -124,32 +127,6 @@ class AlignTimeseries(object):
         y = np.squeeze(np.array(dask.compute(*y_fit)))
         self.signals_aligned_ = y
         return y
-
-
-def broadcastBack(X, collapsedAxis, initialShape):
-    """
-    Given an array, broadcasts it back to the specified intial shape by
-    assuming it was collapsed along a specified dimension. It broadcasts it back
-    by tiling (np.tile).
-        This can be useful for certain operations, such as for
-    instance taking the mean along a certain axis of X and subtracting this
-    from all the values in X.
-    Parameters
-    -----------
-    X- Array to broadcast back.
-    collapsedAxis - Axis along which an array was collapsed to get X
-    initialShape - The initial shape of the array, prior to collapse
-    Returns
-    -------
-    Y - Array of shape = intialDims, which consists of tiled X.
-    """
-    import numpy as np
-    initialShape = np.array(initialShape)
-    X = np.expand_dims(X, axis=collapsedAxis)
-    vec = np.arange(len(initialShape))
-    sd = np.setdiff1d(vec, collapsedAxis)
-    initialShape[sd] = 1
-    return np.tile(X, initialShape)
 
 
 def causalConvWithSemiGauss1d(y, n):
@@ -167,7 +144,6 @@ def causalConvWithSemiGauss1d(y, n):
         Convolved signal
     """
     from scipy.signal import convolve
-    from apCode.SignalProcessingTools import gausswin
     ker = gausswin(int(2*n))
     ker = ker[int(len(ker)/2+1):]
     ker = ker/ker.sum()
@@ -179,19 +155,21 @@ class emd(object):
     Functions and methods related to Empirical Mode Decomposition
     """
 
-    def envelopesAndImf(x, n_comps=1, interp_kind='slinear', triplicate: bool = False):
+    def envelopesAndImf(x, n_comps=1, interp_kind='slinear',
+                        triplicate: bool = False):
         """
         Given an timseries iteratively performs the
-        steps involved in Empirical Mode Decomposition, upto the specified number
-        of components and returns info such as the IMF, and different envelopes
+        steps involved in Empirical Mode Decomposition, upto the specified
+        number of components and returns info such as the IMF, and different
+        envelopes
         Parameters
         -----------
         x - array, (N,)
         Returns
         -------
         out: List of dictionaries, (nComponents,)
-            Each element of the list corresponds to information obtained from EMD
-            at the level of a particular component.
+            Each element of the list corresponds to information obtained from
+            EMD at the level of a particular component.
             Each dictionary has to following key-value pairs
             'imf': Intrinsic mode function
             'pks/crests': Crest peaks
@@ -202,11 +180,11 @@ class emd(object):
             'envelopes/diff': Difference of the above envelopes
             'envelopes/max': Max of the envelopes
         """
-        import numpy as np
-        import scipy as sp
-        from apCode.SignalProcessingTools import timeseries as ts
+        # from apCode.SignalProcessingTools import timeseries as ts
+        ts = timeseries
 
-        def getEnvelopesAndImf(x, interp_kind: str = 'cubic', triplicate: bool = False):
+        def getEnvelopesAndImf(x, interp_kind: str = 'cubic',
+                               triplicate: bool = False):
             if triplicate:
                 x = ts.triplicate(x)
                 indVec = np.arange(len(x))
@@ -224,20 +202,24 @@ class emd(object):
             env_mean = 0.5*(env_troughs + env_crests)
             imf = x-env_mean
             env_diff = 0.5*(env_crests-env_troughs)
-            env_max = np.max(np.abs(np.vstack((env_troughs, env_crests))), axis=0)
+            foo = np.vstack((env_troughs, env_crests))
+            env_max = np.max(np.abs(foo), axis=0)
             if triplicate:
                 imf, env_troughs, env_crests, env_mean, env_diff, env_max = \
                     [ts.middleThird(_) for _ in (imf, env_troughs, env_crests,
                                                  env_mean, env_diff, env_max)]
                 ivm = ts.middleThird(indVec)
-                pks_min = np.take(pks_min, np.where((pks_min >= ivm[0]) & (pks_min <= ivm[-1]))[0])
+                pks_min = np.take(pks_min, np.where((pks_min >= ivm[0]) &
+                                                    (pks_min <= ivm[-1]))[0])
                 pks_min = pks_min - ivm[0]
-                pks_max = np.take(pks_max, np.where((pks_max >= ivm[0]) & (pks_max <= ivm[-1]))[0])
+                pks_max = np.take(pks_max, np.where((pks_max >= ivm[0]) &
+                                                    (pks_max <= ivm[-1]))[0])
                 pks_max = pks_max - ivm[0]
             return imf, pks_min, pks_max, env_troughs, env_crests, env_mean, env_diff, env_max
         y = []
         for cmp in np.arange(n_comps):
-            foo = getEnvelopesAndImf(x, interp_kind=interp_kind, triplicate=triplicate)
+            foo = getEnvelopesAndImf(x, interp_kind=interp_kind,
+                                     triplicate=triplicate)
             pks = dict(troughs=foo[1], crests=foo[2])
             env = dict(troughs=foo[3], crests=foo[4], mean=foo[5],
                        diff=foo[6], max=foo[7])
@@ -277,18 +259,19 @@ class emd(object):
         for i in range(nIMF):
             r_t = r
             is_imf = False
-            while is_imf == False:
+            while not is_imf:
                 # Identify peaks and troughs
                 pks = sp.signal.argrelmax(r_t)[0]
                 trs = sp.signal.argrelmin(r_t)[0]
 
                 # Interpolate extrema
                 pks_r = r_t[pks]
-                fip = sp.interpolate.InterpolatedUnivariateSpline(pks, pks_r, k=3)
+                fip = sp.interpolate.InterpolatedUnivariateSpline(pks, pks_r,
+                                                                  k=3)
                 pks_t = fip(t)
-
                 trs_r = r_t[trs]
-                fitr = sp.interpolate.InterpolatedUnivariateSpline(trs, trs_r, k=3)
+                fitr = sp.interpolate.InterpolatedUnivariateSpline(trs, trs_r,
+                                                                   k=3)
                 trs_t = fitr(t)
 
                 # Calculate mean
@@ -332,24 +315,27 @@ def chebFilt(X, dt, Wn, order=2, ripple=0.2, btype='bandpass'):
 
 def findOnAndOffs(x, thr):
     """
-    Given a signal and a threshold value, estimates and returns the onset and offset indices of events
-        that cross the threshold. The algorithm assumes the signal has been detrended beforehand to that
-        it has a stable baseline. If not, detrend before passing as input.
+    Given a signal and a threshold value, estimates and returns the onset and
+    offset indices of events that cross the threshold. The algorithm assumes
+    the signal has been detrended beforehand to that it has a stable baseline.
+    If not, detrend before passing as input.
     Parameters:
-    x - Time series vector
-    thr - Threshold for defining events, i.e. regions of the signal above the threshold are considered
-        events
-    Returns:
-    onOffInds - Array-like of shape (2,N), where N is the number of events. The 1st and 2nd rows are the
+    x: array, (nTimePts,)
+        Time series vector
+    thr: scalar
+        Threshold for defining events, i.e. regions of the signal above the
+        threshold are considered events
+    Returns
+    -------
+    onOffInds: array-like, (2,nEvents)
+        Here nEvents is the number of events. The 1st and 2nd rows are the
         presumed onsets and offsets of the events
     """
-    import numpy as np
     inds_lvl = levelCrossings(x, thr)
     x_chopped = x.copy()
     x_chopped[np.where(x_chopped >= thr)[0]] = thr
     baseline = np.median(x_chopped)
     inds_baseline = levelCrossings(x, baseline)
-    #inds_onOff = np.zeros(np.shape(inds_lvl))
 
     def getBefore(ind, inds):
         inds = np.delete(inds, np.where(inds >= ind))
@@ -578,17 +564,17 @@ class interp():
 
     def downsample_and_interp2d(X, ds_ratio=(0.5, 0.5), **kwargs):
         """
-        Downsamples the 2D-array X along each axis based on the specified downsampling
-        ratios and returns interpolated array
+        Downsamples the 2D-array X along each axis based on the specified
+        downsampling ratios and returns interpolated array
         Parameters
         ----------
         X: array (M,N)
             Array to downsample and interpolate
         ds_ratio: 2-tuple
-            ds_ratio[0], and ds_ratio[1] are the downsampling ratios along the x-
-            and y-axes respectively. For instance, ds_ratio[0] = 0.5 means
-            the downsampling results in half the number of points (i.e., N/2) along
-            the x-axis
+            ds_ratio[0], and ds_ratio[1] are the downsampling ratios along the
+            x- and y-axes respectively. For instance, ds_ratio[0] = 0.5 means
+            the downsampling results in half the number of points (i.e., N/2)
+            along the x-axis
         **kwargs: Keyword arguments for scipy.interpolate.griddata
         Returns
         -------
@@ -781,10 +767,10 @@ class linalg():
 
         """
         import numpy as np
-        if axis == None:
+        if axis is None:
             X_unit = X/np.linalg.norm(X)
         else:
-            X_unit = X/broadcastBack(np.linalg.norm(X, axis=axis), axis, np.shape(X))
+            X_unit = X/np.expand_dims(np.linalg.norm(X, axis=axis), axis)
         return X_unit
 
 
@@ -849,7 +835,6 @@ def mapToRange(x, mapRange):
     mapRange - 2 element array (e.g., [10, 100]) indicating the range to which
         x is to be mapped
     """
-    from apCode.SignalProcessingTools import standardize
     import sys
     if len(mapRange) != 2:
         print('mapRange must have 2 elements!')
@@ -1091,9 +1076,10 @@ class stats(object):
         nSamples = len(Y)
         nFeatures = X.shape[1]
         mse = (stats.sse(Y, Y_est)/(nSamples-nFeatures-1)).reshape(-1, 1)
-        Sxx = np.sum((X-X.mean(axis=0))**2, axis=0).reshape(1, -1)
+        # mse = (stats.sse(Y, Y_est)/(nSamples-2)).reshape(-1, 1)
+        # Sxx = np.sum((X-X.mean(axis=0))**2, axis=0).reshape(1, -1)
 #        foo = mse@(1/Sxx)
-        # Sxx = np.linalg.pinv(np.dot(X.T, X)).diagonal().reshape(1, -1)
+        Sxx = np.linalg.pinv(np.dot(X.T, X)).diagonal().reshape(1, -1)
         se_ = np.sqrt(mse@Sxx)
         return se_, mse, Sxx
 
@@ -1119,11 +1105,11 @@ class stats(object):
         Returns:
         ssto: An array of shape(n_variables,)
         """
-        import numpy as np
-        Y_mean = np.tile(np.mean(Y, axis=0), [np.shape(Y)[0], 1])
+        Y_mean = np.expand_dims(Y.mean(axis=0), axis=0)
         return np.sum((Y-Y_mean)**2, axis=0)
 
-    def kde2D(x, y, bandwidth=1.0, xyBins=[100, 100], xLims=[], yLims=[], **kwargs):
+    def kde2D(x, y, bandwidth=1.0, xyBins=[100, 100], xLims=[], yLims=[],
+              **kwargs):
         """
         Build 2D kernel density estimate (KDE).
         Uses KernelDensity from sklearn.neighbors
@@ -1131,8 +1117,9 @@ class stats(object):
         x, y - 1D arrays. These give the x- and y- coordinates of the points in
             2D for which the KDE is to be obtained
         bandwidth - [], scalar, or 2-element array. The bandwidth for KDE.
-            If bandwidth is not specified or is empty, then automatically estimates
-            the best bandwith using GridSearchCV sklearn.model_selection
+            If bandwidth is not specified or is empty, then automatically
+            estimates the best bandwith using GridSearchCV
+            sklearn.model_selection
         xyBins - Scalar. # of bins along the x- and y-dimension respectively
         ybins - Scalar. # of bins along the y-dimension
         xlims,ylims - 2-element array-like. If [],t

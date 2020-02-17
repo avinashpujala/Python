@@ -4,15 +4,14 @@ Created on Mon Oct  5 15:50:40 2015
 
 @author: pujalaa
 """
-
+import numpy as np
 import sys
-sys.path.insert(1, 'C:/Users/pujalaa/Documents/Code/Python/code')
-#from apCode.volTools import img as img
-#sys.path.insert(1, 'C:/Users/pujalaa/Documents/Code/Python/code/util')
+sys.path.insert(1, 'v:/code/python/code')
 
 
-def alignSignalsByOnset_old(signals, startSignalInd = 0, nPre = 30, padType = 'edge'):
-    """ 
+def alignSignalsByOnset_old(signals, startSignalInd=0, nPre=30,
+                            padType='edge'):
+    """
     Given a list of signals, returns a matrix of aligned signals
     Parameters
     ----------
@@ -25,16 +24,16 @@ def alignSignalsByOnset_old(signals, startSignalInd = 0, nPre = 30, padType = 'e
     padType: string
         'zero'|'edge'
         If 'zero', then zero pads signals, else edge pads.
-        
+
     """
     import numpy as np
     if not isinstance(signals, list):
         signals = list(signals)
-    sigLens = np.array([len(s) for s in signals])   
+    sigLens = np.array([len(s) for s in signals])
     sig_mean = np.zeros((sigLens.max(),))
     s = signals[startSignalInd]
-    sig_mean[:len(s)] = s    
-    S = np.zeros((sigLens.max(),len(signals)))    
+    sig_mean[:len(s)] = s
+    S = np.zeros((sigLens.max(),len(signals)))
     padLens,shifts,signs = [np.zeros((len(signals),)) for _ in range(3)]
     padInds = []
     indVec = np.arange(sigLens.max())
@@ -44,12 +43,12 @@ def alignSignalsByOnset_old(signals, startSignalInd = 0, nPre = 30, padType = 'e
         shifts[count] = foo['shifts'][1]+nPre
         signs[count] = foo['signs'][1]
         indVec_now = np.roll(indVec,int(shifts[count]))
-        padInds.append(indVec_now[sigLens.max()-int(padLens[count]):])        
+        padInds.append(indVec_now[sigLens.max()-int(padLens[count]):])
         S[:len(foo['signals'][:,1]),count] = np.roll(foo['signals'][:,1],nPre)
-        sig_mean = np.mean(S[:,:count+1],axis = 1)    
+        sig_mean = np.mean(S[:,:count+1],axis = 1)
     mu = np.mean(S,axis = 1)
-    c = np.array([np.corrcoef(mu,s)[0,1] for s in S.T])   
-    out = {'signals': np.array(S), 'padLens': padLens.astype(int),'shifts': shifts.astype(int), 
+    c = np.array([np.corrcoef(mu,s)[0,1] for s in S.T])
+    out = {'signals': np.array(S), 'padLens': padLens.astype(int),'shifts': shifts.astype(int),
            'signs': signs,'correlations': c,'nPre': nPre,'padType': padType,
            'padInds':padInds}
     def transform(out,signals, padType = None):
@@ -58,7 +57,7 @@ def alignSignalsByOnset_old(signals, startSignalInd = 0, nPre = 30, padType = 'e
         signals_new = []
         for count, s in enumerate(signals):
             if padType == 'edge':
-                foo = np.pad(s,pad_width = (0,out['padLens'][count]), 
+                foo = np.pad(s,pad_width = (0,out['padLens'][count]),
                              mode = 'edge')
             else:
                 foo = np.pad(s,pad_width = (0,out['padLens'][count]),
@@ -70,7 +69,7 @@ def alignSignalsByOnset_old(signals, startSignalInd = 0, nPre = 30, padType = 'e
     return out
 
 def alignSignalsByOnset(signals, startSignalInd = 0, padType = 'edge'):
-    """ 
+    """
     Given a list of signals, returns a matrix of aligned signals
     Parameters
     ----------
@@ -83,12 +82,12 @@ def alignSignalsByOnset(signals, startSignalInd = 0, padType = 'edge'):
     padType: string
         'zero'|'edge'
         If 'zero', then zero pads signals, else edge pads.
-        
+
     """
     import numpy as np
     if not isinstance(signals, list):
         signals = list(signals)
-    sigLens = np.array([len(s) for s in signals])    
+    sigLens = np.array([len(s) for s in signals])
     maxLen = sigLens.max()
     s = signals[startSignalInd]
     if padType == 'edge':
@@ -96,7 +95,7 @@ def alignSignalsByOnset(signals, startSignalInd = 0, padType = 'edge'):
     else:
         sig_mean = np.pad(s, pad_width = (0,maxLen-len(s)), mode = 'constant',
                           constant_values = (0,0))
-     
+
     S = np.zeros((maxLen,len(signals)))
     padLens,signs = [],[]
     for count, s in enumerate(signals):
@@ -106,14 +105,14 @@ def alignSignalsByOnset(signals, startSignalInd = 0, padType = 'edge'):
         #lenDiff = maxLen-np.shape(foo['signals'])[0]
         #pl = foo['padLens'][1]
         #pl[1] = pl[1]+lenDiff
-        foo['signals'] = foo['signals'][:maxLen,:]        
-        padLens.append(pl)     
-        signs.append(foo['signs'][1])       
-        S[:len(foo['signals'][:,1]),count] = foo['signals'][:,1]   
-        sig_mean = np.mean(S[:,:count+1],axis = 1)    
+        foo['signals'] = foo['signals'][:maxLen,:]
+        padLens.append(pl)
+        signs.append(foo['signs'][1])
+        S[:len(foo['signals'][:,1]),count] = foo['signals'][:,1]
+        sig_mean = np.mean(S[:,:count+1],axis = 1)
     mu = np.mean(S,axis = 1)
 
-    c = np.array([np.corrcoef(mu,s)[0,1] for s in S.T])   
+    c = np.array([np.corrcoef(mu,s)[0,1] for s in S.T])
     out = {'signals': np.array(S), 'padLens': padLens,'signs': signs,
            'correlations': c,'padType': padType}
     def transform(out,signals, padType = None):
@@ -122,20 +121,20 @@ def alignSignalsByOnset(signals, startSignalInd = 0, padType = 'edge'):
         #signals_new = []
         signals_new = np.zeros_like(out['signals'])
         maxLen = np.shape(signals_new)[0]
-        for count, s in enumerate(signals):            
+        for count, s in enumerate(signals):
             pw = out['padLens'][count]
             if padType == 'edge':
                 foo = np.delete(s,np.arange(pw[0,0]))
-                foo = np.pad(foo, pad_width = pw[1], mode = 'edge')              
-            else: 
+                foo = np.pad(foo, pad_width = pw[1], mode = 'edge')
+            else:
                 foo = np.delete(s,np.arange(pw[0,0]))
-                foo = np.pad(foo,pad_width = pw[1], mode = 'constant', 
-                             constant_values = (0,0))                   
-            foo = out['signs'][count]*foo            
+                foo = np.pad(foo,pad_width = pw[1], mode = 'constant',
+                             constant_values = (0,0))
+            foo = out['signs'][count]*foo
             foo = np.delete(foo,np.arange(maxLen,len(foo)))
             signals_new[:len(foo),count]= foo
         return signals_new
-    
+
     def padToNan(out, signals_aligned):
         """
         Sets padded values in aligned signals to NaNs for plotting
@@ -158,14 +157,14 @@ def alignSignalsByOnset(signals, startSignalInd = 0, padType = 'edge'):
             signals_new.append(blah)
         signals_new = np.array(signals_new).T
         return signals_new
-    
+
     out['transform'] = transform
     out['padToNan'] = padToNan
-    
+
     return out
 
 
-def analyzeDistribution(x, comps = 5, plotBool = True, xLabel = '', distType ='kde', 
+def analyzeDistribution(x, comps = 5, plotBool = True, xLabel = '', distType ='kde',
                         choose_comps = True):
     """
     When given some 1D data, returns the histogram,the components
@@ -184,12 +183,12 @@ def analyzeDistribution(x, comps = 5, plotBool = True, xLabel = '', distType ='k
         If True, then automatically chooses the optimal number of components, else uses
         specified number of components
     plotBool - Boolean; If True, plots the figure, and returns the figure handle
-    xLabel: string 
+    xLabel: string
         Label for the x-axis
     distType: string
         'kde' | 'hist'; If kde then estimates and plots kernel density, else a regular
         histogram with automatic binning
-        
+
     Returns
     -------
     gmm - GM model object with relevant info appended. For e.g., the components are
@@ -202,36 +201,36 @@ def analyzeDistribution(x, comps = 5, plotBool = True, xLabel = '', distType ='k
     import apCode.machineLearning.ml as ml
     from sklearn.mixture import GaussianMixture as GMM
     xRange = (np.min(x),np.max(x))
-    e2c = lambda x: 0.5*(x[:-1]+x[1:])    
-    
+    e2c = lambda x: 0.5*(x[:-1]+x[1:])
+
     if np.ndim(comps)==0:
-        comps = np.arange(comps)+1    
+        comps = np.arange(comps)+1
 
     if np.ndim(x)==1:
-        x = x.reshape((-1,1))   
-    
+        x = x.reshape((-1,1))
+
     ic = ml.gmm.informationVersusNumComp(x,comps=comps);
     if choose_comps:
         n_components = comps[np.min((np.argmin(ic['aic']),np.argmin(ic['bic'])))]
     else:
         n_components = np.max(comps)
-   
+
     gmm = GMM(n_components=n_components).fit(x)
-    gmm.ic_ = ic;    
+    gmm.ic_ = ic;
     gmm.comps_ = ml.gmm.components(gmm,x)
     gmm.labels_ = gmm.predict(x)
     N = gmm.n_components-1
-    
+
     if plotBool:
         fh = plt.figure(figsize=(16,18))
         #---Histogram
         plt.subplot(2,1,1)
         if distType == 'hist':
-            p,bins = np.histogram(x,bins = 'auto',density = True, range = xRange)      
+            p,bins = np.histogram(x,bins = 'auto',density = True, range = xRange)
             w = np.mean(np.diff(bins))
             plt.bar(e2c(bins),p,alpha = 0.3, width =w, label = 'Histogram',color = 'gray')
             plt.xlabel(xLabel)
-            plt.ylabel('Prob')            
+            plt.ylabel('Prob')
         else:
             from scipy import stats
             kde = stats.gaussian_kde(x.ravel(),bw_method = 'scott')
@@ -243,10 +242,10 @@ def analyzeDistribution(x, comps = 5, plotBool = True, xLabel = '', distType ='k
             plt.xlabel(xLabel)
             plt.ylabel('Prob density')
         gmm.hist_ = {'p':p, 'bins': bins}
-        
+
         #---GMM
         #t = np.linspace(x.min(),x.max(),np.shape(x)[0])
-        t = np.linspace(bins.min(),bins.max(),np.shape(x)[0])        
+        t = np.linspace(bins.min(),bins.max(),np.shape(x)[0])
         gmm.x_ = t
         sortInds = np.argsort(gmm.means_[:,0].ravel())
         mus = gmm.means_[:,0].ravel()
@@ -261,7 +260,7 @@ def analyzeDistribution(x, comps = 5, plotBool = True, xLabel = '', distType ='k
         plt.plot(t,np.sum(gmm.comps_,axis = 1),'k--', label = r'$\Sigma_{{k = 0}}^{sup} x_k$'.format(sup = {N}))
         plt.title('Distribution')
         plt.legend();
-        
+
         #---Information criteria
         plt.subplot(2,1,2)
         #plt.show()
@@ -275,7 +274,7 @@ def analyzeDistribution(x, comps = 5, plotBool = True, xLabel = '', distType ='k
         return gmm, fh
     else:
         return gmm
-    
+
 def appendTrials(trialDir,nTrials = 5):
     '''
     outDirs = appendTrials(trialDir, nTrials = n) - Creates n-trial appended directories
@@ -292,7 +291,7 @@ def appendTrials(trialDir,nTrials = 5):
     imgDir_new = trialDir + '/'
     trlList = []
     subList = []
-    for trl in range(len(imgFldrs_sorted)):    
+    for trl in range(len(imgFldrs_sorted)):
         if np.mod(trl,nTrials)== nTrials-1:
             subList.append(trl)
             trlList.append(subList)
@@ -302,7 +301,7 @@ def appendTrials(trialDir,nTrials = 5):
     if len(subList)>0:
         trlList.append(subList)
     print('Copying images...')
-    outDirs = []    
+    outDirs = []
     for trlNums in trlList:
         print('Copied trials ', trlNums)
         fldrName = 'trials_' + str(trlNums[0]) + '-'+ str(trlNums[-1])
@@ -322,23 +321,23 @@ def appendTrials(trialDir,nTrials = 5):
                         src = os.path.join(os.path.join(imgDir_new,fldr),imgFile)
                         sh.copy2(src,dst)
                         fileNum = '%.6d' % ctr
-                        newFileName = fldrName + '_' + fileNum + '.jpg'       
+                        newFileName = fldrName + '_' + fileNum + '.jpg'
                         os.rename(os.path.join(dst,imgFile),os.path.join(dst,newFileName))
             dst.replace('\\','/')
             outDirs.append(dst)
     return(outDirs)
-    print(int(time.time()-startTime),'sec')   
+    print(int(time.time()-startTime),'sec')
 
 def bendInfoFromTotalCurvature(x, thr = (2,0.5), n_ker = 250, fps = 500):
     """
-    Given a single trial timeseries of the total body curvature of fish returns 
+    Given a single trial timeseries of the total body curvature of fish returns
         dictiionary with bend parameters.
     Parameters
     ----------
     x: array, (N,)
         Total curvature timeseries with N points
     thr: tuple, (2,)
-        min(thr), max(thr) indicate the lower and upper limits of the nonstationary 
+        min(thr), max(thr) indicate the lower and upper limits of the nonstationary
         threshold used to detect peaks using convolution
     n_ker: scalar
         Kernel width in points; the signal is convolved with a hemi-gaussian to simulate
@@ -360,12 +359,12 @@ def bendInfoFromTotalCurvature(x, thr = (2,0.5), n_ker = 250, fps = 500):
     ### Compute a nonstationary threshold based on convolution of acivity with causal kernel
     x_conv = spt.causalConvWithSemiGauss1d(np.abs(x), n_ker)
     x_thr = spt.standardize(x_conv.max()-x_conv)*(thr.max()-thr.min()) + thr.min()
-    
+
     ### Delete peaks below threshold
     d = {}
     if len(pks)>1:
         pks = np.delete(pks, np.where(np.abs(x_std[pks])<x_thr[pks]))
-    
+
         ### Delete peaks with small relative difference in amplitude
         dAmps = np.abs(np.diff(x_std[pks]))
         pks = np.delete(pks,np.where(dAmps<(2*thr.min()))[0]+1)
@@ -382,7 +381,7 @@ def bendInfoFromTotalCurvature(x, thr = (2,0.5), n_ker = 250, fps = 500):
         print('Only 1 peak found, skipping')
         d = {}
         return d
-    
+
 
 def centerImagesOnFish(I,fishPos):
     import numpy as np
@@ -392,13 +391,13 @@ def centerImagesOnFish(I,fishPos):
         img = I
     else:
         print('Image input must be 2 or 3 dimensional!')
-        
+
     origin = np.round(np.array(np.shape(img))/2).astype(int)
     I_roll = list(map(lambda x, y: np.roll(x,origin[0]-y[0],axis = 0), I,fishPos))
     I_roll = list(map(lambda x, y: np.roll(x,origin[1]-y[1],axis = 1), I_roll,fishPos))
     return I_roll
 
-   
+
 def cropImagesAroundArena(I):
     '''
     Given an image stack, returns images cropped around the fish arena
@@ -435,13 +434,13 @@ def cropImagesAroundArena(I):
     if len(xInds_end)==0:
         xInds_end = np.max(xInds)
     else:
-        xInds_end = np.min(xInds_end)  
-    xInds = np.hstack((xInds_start,xInds_end))   
-    
+        xInds_end = np.min(xInds_end)
+    xInds = np.hstack((xInds_start,xInds_end))
+
     yInds = spt.findPeaks(yProf,thr = 1)
     yInds_start = np.delete(yInds, np.where(yInds > 0.3*imgLen))
     yInds_end = np.delete(yInds, np.where(yInds < 0.6*imgLen))
-    
+
     if len(yInds_start)==0:
         yInds_start = np.min(yInds)
     else:
@@ -449,7 +448,7 @@ def cropImagesAroundArena(I):
     if len(yInds_end)==0:
         yInds_end = np.max(yInds)
     else:
-        yInds_end = np.min(yInds_end)        
+        yInds_end = np.min(yInds_end)
     yInds= np.hstack((yInds_start,yInds_end))
 
 
@@ -460,8 +459,8 @@ def cropImagesAroundArena(I):
     y[0] = np.max([y[0]-10,0])
     y[1] = np.min([y[1]+10,imgLen])
     I_crop= I[:,y[0]:y[1],x[0]:x[1]]
-    return(I_crop,x,y)   
-    
+    return(I_crop,x,y)
+
 
 def deleteIncompleteTrlImgs(imgDir,nImagesInTrl = 500*1.5 + 30*60, imgExt = 'bmp'):
     '''
@@ -473,14 +472,14 @@ def deleteIncompleteTrlImgs(imgDir,nImagesInTrl = 500*1.5 + 30*60, imgExt = 'bmp
     import apCode.FileTools as ft
     import numpy as np
     import os
-    
+
     filesInDir= ft.findAndSortFilesInDir(imgDir,ext = imgExt)
     filesInDir = [os.path.join(imgDir,fileInDir) for fileInDir in filesInDir]
     lastFullTrlImg = int(np.floor(len(filesInDir)/nImagesInTrl) * nImagesInTrl)
-    
+
     print('About to delete', len(filesInDir)-lastFullTrlImg, 'images')
     for fileInDir in filesInDir[lastFullTrlImg:-1]:
-        os.remove(fileInDir) 
+        os.remove(fileInDir)
     os.remove(filesInDir[-1])
     print('Done!')
 
@@ -493,8 +492,8 @@ def filterFishData(data,dt= 1./1000,Wn=100, btype = 'low', \
     import numpy as np
     import copy
     data_flt = copy.deepcopy(data)
-    keys = list(data_flt[0].keys())    
-    keys = np.setdiff1d(keys,keysToOmit)    
+    keys = list(data_flt[0].keys())
+    keys = np.setdiff1d(keys,keysToOmit)
     for fishNum,fishData in enumerate(data_flt):
         for key in keys:
             if key is not 'time':
@@ -503,106 +502,106 @@ def filterFishData(data,dt= 1./1000,Wn=100, btype = 'low', \
                     np.float64(trlData[0][0])
                     data_flt[fishNum][key] = list(map(lambda x:spt.chebFilt(x,dt,Wn,btype = btype.lower()),trlData))
                 except:
-                    print('Did not filter fish #', fishNum, ', key: ', key)                                            
+                    print('Did not filter fish #', fishNum, ', key: ', key)
                     data_flt[fishNum][key] = trlData
     return data_flt
-   
-    
+
+
 def flotifyTrlDirs(trialDir, trializeDirs = 'y', timeStampSep = ']_'):
     '''
     flotifyTrlDirs - Given a directory trializes each subdirectory and renames
-        images contained within to make compatible with Flote    
+        images contained within to make compatible with Flote
     flotifyTrlDirs(trialDir, trializeDirs = 'y', timeStampSep)
     Inputs - Directory containing trial/image directories
     trializeDirs = 'y' results in renaming subdirectories as trials
     timeStampSep = Separator character(s) marking the beginning of the timestamp
-        on the directory name       
-   
+        on the directory name
+
     '''
     import os
     import time
     import numpy as np
     import apCode.FileTools as ft
-    import apCode.volTools as volt   
-    
-    def renameTrlDirs(trialDir,timeStampSep = ']_'):       
+    import apCode.volTools as volt
+
+    def renameTrlDirs(trialDir,timeStampSep = ']_'):
         imgFldrs = ft.subDirsInDir(trialDir)
         imgFldrs_sorted = np.sort(imgFldrs)
         newDirNames = []
-        for num, name in enumerate(imgFldrs_sorted):    
+        for num, name in enumerate(imgFldrs_sorted):
             if name.find('.') == -1:
                 trlNum = '%0.2d' % num
                 timeStamp = name.split(timeStampSep)
                 if len(timeStamp) > 1:
-                    timeStamp = timeStamp[1]      
+                    timeStamp = timeStamp[1]
                 else:
                     timeStamp = timeStamp[0][-9:-1] + timeStamp[0][-1]
                 newName = 'Trial' + '_' + trlNum + '_' + timeStamp
                 src = trialDir + '/' + name
-                dst = trialDir + '/' + newName                
+                dst = trialDir + '/' + newName
                 os.rename(src,dst)
                 newDirNames.append(newName)
-                
-    def renameImagesInTrlDirs(trialDir):       
+
+    def renameImagesInTrlDirs(trialDir):
         imgFldrs= ft.subDirsInDir(trialDir)
-        imgFldrs_sorted = np.sort(imgFldrs)        
+        imgFldrs_sorted = np.sort(imgFldrs)
         for fldrNum,fldr in enumerate(imgFldrs_sorted):
             src = trialDir + '/' + fldr
-            imgsInFldr = volt.img.getImgsInDir(src)             
-            imgsInFldr_sorted = np.sort(imgsInFldr)                
+            imgsInFldr = volt.img.getImgsInDir(src)
+            imgsInFldr_sorted = np.sort(imgsInFldr)
             for imgNum,imgName in enumerate(imgsInFldr_sorted):
                 imgExt= imgName.split('.')[1]
                 src2 = src + '/' + imgName
                 suffix = '%0.6d' % imgNum
                 dst = src + '/' + fldr + '_' + suffix + '.' + imgExt
-                os.rename(src2, dst)                    
+                os.rename(src2, dst)
             print(fldr)
-                
-    ### Renaming trial folders    
+
+    ### Renaming trial folders
     print("Renaming trial folders...")
-    startTime= time.time() 
+    startTime= time.time()
     if trializeDirs.lower() == 'y':
         renameTrlDirs(trialDir)
-        
+
     ### Renaming images in trial folders
     print("Renaming images in trial folders...")
-    renameImagesInTrlDirs(trialDir)  
-      
+    renameImagesInTrlDirs(trialDir)
+
     print('Flotification complete!')
     print(int(time.time()-startTime), 'sec')
 
 def flotifyTrlDirs_clstr(trialDir, trializeDirs = 'y', timeStampSep = '_'):
     '''
     flotifyTrlDirs - Given a directory trializes each subdirectory and renames
-        images contained within to make compatible with Flote    
+        images contained within to make compatible with Flote
     flotifyTrlDirs(trialDir, trializeDirs = 'y', timeStampSep)
     Inputs - Directory containing trial/image directories
     trializeDirs = 'y' results in renaming subdirectories as trials
     timeStampSep = Separator character(s) marking the beginning of the timestamp
-        on the directory name       
-   
+        on the directory name
+
     '''
-    import os,time      
+    import os,time
     import numpy as np
     import apCode.FileTools as ft
     import apCode.volTools as volt
-    
+
     def renameTrlDirs(trialDir,timeStampSep = ']_'):
         imgFldrs = ft.getsubDirsInDir(trialDir)
-        imgFldrs_sorted = np.sort(imgFldrs)        
+        imgFldrs_sorted = np.sort(imgFldrs)
         for num, name in enumerate(imgFldrs_sorted):
             if name.find('.') == -1:
                 trlNum = '%0.2d' % num
                 timeStamp = name.split(timeStampSep)
                 if len(timeStamp) > 1:
-                    timeStamp = timeStamp[1]      
+                    timeStamp = timeStamp[1]
                 else:
                     timeStamp = timeStamp[0][-9:-1] + timeStamp[0][-1]
                 newName = 'Trial' + '_' + trlNum + '_' + timeStamp
                 src = trialDir + '/' + name
-                dst = trialDir + '/' + newName                
-                os.rename(src,dst)                
-    
+                dst = trialDir + '/' + newName
+                os.rename(src,dst)
+
     def renameImagesInTrlDirs(trialDir):
         def renameImage(imgInfo):
             ''' imgInfo = (imgName,imgNum,fldrName,fldrPath) '''
@@ -615,29 +614,29 @@ def flotifyTrlDirs_clstr(trialDir, trializeDirs = 'y', timeStampSep = '_'):
             suffix = '%0.6d' % imgNum
             targetPath = fldrPath + '/' + fldrName + suffix + '.' + imgExt
             os.rename(imgPath,targetPath)
-        
+
         imgFldrs= ft.getsubDirsInDir(trialDir)
-        imgFldrs_sorted = np.sort(imgFldrs)             
+        imgFldrs_sorted = np.sort(imgFldrs)
         for fldrNum,fldr in enumerate(imgFldrs_sorted):
             fldrPath = trialDir + '/' + fldr
-            imgsInFldr = volt.getImgsInDir(fldrPath)             
+            imgsInFldr = volt.getImgsInDir(fldrPath)
             imgsInFldr_sorted = np.sort(imgsInFldr)
             imgNums = range(len(imgsInFldr))
             fldrNameList = [fldr]*len(imgsInFldr)
             fldrPathList = [fldrPath]*len(imgsInFldr)
-            imgInfoList = list(zip(imgsInFldr_sorted,imgNums,fldrNameList,fldrPathList))           
-            sc.parallelize(imgInfoList).foreach(renameImage) # sc should work on spark            
+            imgInfoList = list(zip(imgsInFldr_sorted,imgNums,fldrNameList,fldrPathList))
+            sc.parallelize(imgInfoList).foreach(renameImage) # sc should work on spark
             print(fldr)
-    ### Renaming trial folders    
+    ### Renaming trial folders
     print("Renaming trial folders...")
-    tic = time.time() 
+    tic = time.time()
     if trializeDirs.lower() == 'y':
         renameTrlDirs(trialDir)
-        
+
     ### Renaming images in trial folders
     print("Renaming images in trial folders...")
-    renameImagesInTrlDirs(trialDir)  
-      
+    renameImagesInTrlDirs(trialDir)
+
     print('Flotification complete!')
     print(int(time.time()-tic), 'sec')
 
@@ -645,47 +644,47 @@ def flotifyTrlDirs_clstr(trialDir, trializeDirs = 'y', timeStampSep = '_'):
 def flotifyTrlDirs_parallel(trialDir, trializeDirs = 'y', timeStampSep = ']_'):
     '''
     flotifyTrlDirs - Given a directory trializes each subdirectory and renames
-        images contained within to make compatible with Flote    
+        images contained within to make compatible with Flote
     flotifyTrlDirs(trialDir, trializeDirs = 'y', timeStampSep)
     Inputs - Directory containing trial/image directories
     trializeDirs = 'y' results in renaming subdirectories as trials
     timeStampSep = Separator character(s) marking the beginning of the timestamp
-        on the directory name       
-   
+        on the directory name
+
     '''
-    import os,time, multiprocessing   
+    import os,time, multiprocessing
     import numpy as np
     import apCode.FileTools as ft
     import apCode.volTools as volt
     from joblib import Parallel, delayed
-    
-    def renameTrlDirs(trialDir,timeStampSep = ']_'):       
+
+    def renameTrlDirs(trialDir,timeStampSep = ']_'):
         imgFldrs = ft.subDirsInDir(trialDir)
         imgFldrs_sorted = np.sort(imgFldrs)
         newDirNames = []
-        for num, name in enumerate(imgFldrs_sorted):    
+        for num, name in enumerate(imgFldrs_sorted):
             if name.find('.') == -1:
                 trlNum = '%0.2d' % num
                 timeStamp = name.split(timeStampSep)
                 if len(timeStamp) > 1:
-                    timeStamp = timeStamp[1]      
+                    timeStamp = timeStamp[1]
                 else:
                     timeStamp = timeStamp[0][-9:-1] + timeStamp[0][-1]
                 newName = 'Trial' + '_' + trlNum + '_' + timeStamp
                 src = trialDir + '/' + name
-                dst = trialDir + '/' + newName                
+                dst = trialDir + '/' + newName
                 os.rename(src,dst)
                 newDirNames.append(newName)
-                
-    def renameImagesInTrlDirs(trialDir):       
+
+    def renameImagesInTrlDirs(trialDir):
         imgFldrs= ft.subDirsInDir(trialDir)
         imgFldrs_sorted = np.sort(imgFldrs)
-        numCores = np.min(multiprocessing.cpu_count(),30)        
+        numCores = np.min(multiprocessing.cpu_count(),30)
         for fldrNum,fldr in enumerate(imgFldrs_sorted):
             src = trialDir + '/' + fldr
-            imgsInFldr = volt.getImgsInDir(src)             
+            imgsInFldr = volt.getImgsInDir(src)
             imgsInFldr_sorted = np.sort(imgsInFldr)
-            srcList, dstList = [],[]            
+            srcList, dstList = [],[]
             for imgNum,imgName in enumerate(imgsInFldr_sorted):
                 imgExt= imgName.split('.')[1]
                 src2 = src + '/' + imgName
@@ -695,79 +694,82 @@ def flotifyTrlDirs_parallel(trialDir, trializeDirs = 'y', timeStampSep = ']_'):
                 dstList.append(dst)
             argList = list(zip(srcList,dstList))
             #print(argList)
-            Parallel(n_jobs=numCores,verbose = 3)(delayed(os.rename)(x[0],x[1]) for x in argList)    
-            #os.rename(src2, dst)                    
+            Parallel(n_jobs=numCores,verbose = 3)(delayed(os.rename)(x[0],x[1]) for x in argList)
+            #os.rename(src2, dst)
             print(fldr)
-                
-    ### Renaming trial folders    
+
+    ### Renaming trial folders
     print("Renaming trial folders...")
-    startTime= time.time() 
+    startTime= time.time()
     if trializeDirs.lower() == 'y':
         renameTrlDirs(trialDir)
-        
+
     ### Renaming images in trial folders
     print("Renaming images in trial folders...")
-    renameImagesInTrlDirs(trialDir)  
-      
+    renameImagesInTrlDirs(trialDir)
+
     print('Flotification complete!')
     print(int(time.time()-startTime), 'sec')
 
-def getArenaEdge(img, nIter = 100, tol = 1e-2, plotBool = True):
+
+def getArenaEdge(img, nIter=100, tol=1e-2, filt_sigma=10,
+                 q_min=0.05, q_max=0.95, plotBool=False, cmap='gist_earth'):
     """
-    When given an image (such as the background subtracted image), returns the coordinates
-    of a cicle fit to the edge
-    
+    When given an image (such as the background subtracted image), returns the
+    coordinates of a cicle fit to the edge
+
     Parameters
     ----------
     img: 2D array
         Reference image containing the arena edge
     nIter: scalar
-        Number of iterations to loop through when fitting circle, see 
+        Number of iterations to loop through when fitting circle, see
         apCode.cv.feature.fitCircle
     tol: scalar
         Error tolerance; see nIter
     plotBool: boolean
         If true, plots the fit circle atop the reference image
-    
+
     Returns
     -------
     coords: array, shape (2, N)
-        Coordinates of the fit circle, 1st and 2nd rows are the x- and y-coordinates
-        respectively
+        Coordinates of the fit circle, 1st and 2nd rows are the x- and
+        y-coordinates respectively
     """
-    import numpy as np
-    import apCode.volTools as volt
-    import importlib
-    importlib.reload(volt)
-    from scipy.ndimage import gaussian_filter
-    from skimage.filters import sobel
-    from apCode.cv.feature import fitCircle  
+    # import apCode.volTools as volt
+    # from scipy.ndimage import gaussian_filter
+    from skimage.feature import canny
+    from apCode.cv.feature import fitCircle
     import matplotlib.pyplot as plt
-    img_edge = gaussian_filter(sobel(img),5) 
+    img_edge = canny(img, sigma=filt_sigma, low_threshold=q_min,
+                     high_threshold=q_max, use_quantiles=True)
+    # img_edge = gaussian_filter(sobel(img), 5)
 #    print('Estimating threshold...')
-    thr = volt.getGlobalThr(img_edge)
-    img_edge[img_edge <thr] = 0
-    img_edge[img_edge >= thr] = 1
+    # thr = volt.getGlobalThr(img_edge)
+    # img_edge[img_edge < thr] = 0
+    # img_edge[img_edge >= thr] = 1
     coords = np.where(img_edge)
 #    print('Fitting circle to arena edge...')
     coords_new = fitCircle(coords)[0]
-    
+
     if plotBool:
-        plt.imshow(img,cmap= 'gray')
+        if isinstance(cmap, str):
+            cmap = eval(f'plt.cm.{cmap}')
+        plt.imshow(img, cmap=cmap)
         plt.axis('image')
         plt.axis('off')
-        c = np.array(plt.cm.tab10(0)).reshape((1,-1))
-        plt.scatter(coords_new[1],coords_new[0],s = 5,c = c)
-        plt.scatter(coords_new[1][0],coords_new[0][0], s= 20, c = c,
-                    label = 'Fit circle')
-        plt.legend(loc = 0)
-        
-    return np.array(coords_new)    
+        plt.scatter(*coords_new[::-1, ::10], s=5, c='r')
+        plt.scatter(coords_new[1][0], coords_new[0][0], s=20, c='r',
+                    label='Fit circle')
+        plt.legend(loc=0)
+    return np.array(coords_new)
 
-def get1stBendInfo(data,key = 'curvature',ampZscoreThr = 2, slopeZscoreThr = 1.5):
+
+def get1stBendInfo(data, key='curvature', ampZscoreThr=2, slopeZscoreThr=1.5):
     '''
-    get1stBendInfo - For the specified key of input data, gets relevant info for 1st bend
-    firstBendInfo = getFirstBendInfo(data,field = 'curvature',ampZscoreThr = 5,\
+    get1stBendInfo - For the specified key of input data, gets relevant info
+    for 1st bend
+    firstBendInfo = getFirstBendInfo(data,field = 'curvature',ampZscoreThr = 5,
         slopeZscoreThr =5)
     Inputs:
     data - 'data' variable containing .trk file info loaded by FreeSwimBehavior
@@ -775,25 +777,26 @@ def get1stBendInfo(data,key = 'curvature',ampZscoreThr = 2, slopeZscoreThr = 1.5
     ampZcoreThr - Amplitude threshold in zscore
     slopeZscoreThr - Slope threshold in zscsore
     Outputs:
-    firstBendInfo - Contains useful info about the first bend in response to stim
+    firstBendInfo - Contains useful info about the first bend in response to
+    stim
         firstBendInfo[fishNum][0] = Onnset index
         fistBendInfo[fishNum][1] = First peak amplitude
         firstBendInfo[fishNum][2] = First peak index
         firstBendInfo[fishNum][3] = 1 or -1, indicating sign of peak (in the case of
             fish curvature, this corresponds to left or right turn respectively)
         firstBendInfo[fishNum+1] = List of variable names
-    '''    
+    '''
     out = []
     for fishData in data:
-        temp =[]       
-        for sig in fishData[key]:           
+        temp =[]
+        for sig in fishData[key]:
             onsetInd = getOnsetInd(sig,ampZscoreThr=ampZscoreThr,slopeZscoreThr=slopeZscoreThr)
             pkAmp,pkInd = get1stPkInfo(sig, onsetInd, ampZscoreThr=ampZscoreThr)
             if pkAmp > 0:
                 turnId = 1 # Left turn
             else:
                 turnId = -1 # Right turn
-            temp.append([onsetInd,pkAmp,pkInd, turnId])            
+            temp.append([onsetInd,pkAmp,pkInd, turnId])
         out.append(temp)
     varNames = ['onsetInd','peakAmp','peakInd','turnId']
     out.append(varNames)
@@ -811,9 +814,9 @@ def get1stPkInfo(signal,onsetInd, ampZscoreThr = 5):
     ampZscoreThr- Amplitude threshold in zscore (default = 5)
     '''
     import numpy as np
-    import SignalProcessingTools as spt    
+    import SignalProcessingTools as spt
     if ~np.isnan(onsetInd):
-        sigPks = spt.findPeaks(np.abs(signal[onsetInd:-1]),thr = ampZscoreThr,minPkDist=5)        
+        sigPks = spt.findPeaks(np.abs(signal[onsetInd:-1]),thr = ampZscoreThr,minPkDist=5)
         if len(sigPks)==0:
             print('No signal pks found, lower amp threshold')
             pkInd, pkAmp = np.nan, np.nan
@@ -827,17 +830,17 @@ def get1stPkInfo(signal,onsetInd, ampZscoreThr = 5):
 
 def getHeadTailCurvatures(data):
     '''
-    Given fish data, modifies it such that head and tail curvature are added as 
+    Given fish data, modifies it such that head and tail curvature are added as
         key-value pairs for each fish and trial
     '''
     import numpy as np
-    import volTools as volt   
-    def headTailCurvatures(axis1,axis2,axis3):       
+    import volTools as volt
+    def headTailCurvatures(axis1,axis2,axis3):
         f = lambda th:np.array(volt.pol2cart(1,th*np.pi/180))
         g = lambda v0,v1: np.round(np.angle((v0[0] + v0[1]*1j)*np.conj(v1[0] + v1[1]*1j))*180/np.pi*100)/100
         h = lambda th1,th2,th3: [g(f(th1),f(th2)), g(f(th2),f(th3))]
         angles = np.array([h(th[0],th[1],th[2]) for th in zip(axis1,axis2,axis3)])
-        return np.transpose(angles,[1,0])    
+        return np.transpose(angles,[1,0])
     for fishNum,fish in enumerate(data):
         data[fishNum]['curv_head'] = []
         data[fishNum]['curv_tail'] = []
@@ -860,12 +863,12 @@ def getOnsetInd(signal,ampZscoreThr = 5, slopeZscoreThr =1):
     '''
     import numpy as np
     import apCode.SignalProcessingTools as spt
-    
-    dS = np.diff(signal)    
+
+    dS = np.diff(signal)
     sigPks = spt.findPeaks(np.abs(spt.zscore(signal)),thr=ampZscoreThr,minPkDist=5)[0]
-    zeroFlag = 0       
+    zeroFlag = 0
     if len(sigPks)==0:
-        print('No signal pks found, lower amp threshold') 
+        print('No signal pks found, lower amp threshold')
         zeroFlag = 1
         sigPks = np.nan
     slopePks_pos = spt.findPeaks(spt.zscore(dS),thr =slopeZscoreThr,minPkDist=5)[0]
@@ -875,16 +878,16 @@ def getOnsetInd(signal,ampZscoreThr = 5, slopeZscoreThr =1):
         print('No onsets found, lower slope threshold')
         zeroFlag = 1
         slopePks = np.nan
-    
-    if zeroFlag == 0:        
-        latDiff = sigPks[0]-slopePks    
+
+    if zeroFlag == 0:
+        latDiff = sigPks[0]-slopePks
         negInds = np.where(latDiff<0)[0]
-        latDiff = np.delete(latDiff,negInds)   
+        latDiff = np.delete(latDiff,negInds)
         if len(latDiff)==0:
             onsetInd = np.nan
         else:
             onsetInd =slopePks[np.where(latDiff==np.min(latDiff))[0]]
-    else:        
+    else:
         onsetInd = np.nan
     return onsetInd
 
@@ -892,7 +895,7 @@ def getPxlSize(img,diam = 50,**kwargs):
     """
     Given a reference image where the edge of the roughly circular fish arena is discernible, returns
     the size of the pixel using the specified diameter of the arena edge
-    
+
     Parameters
     ----------
     img: 2D array
@@ -900,7 +903,7 @@ def getPxlSize(img,diam = 50,**kwargs):
     diam: scalar
         Diameter of circular arena (Pixel length will be returned in the same units used here)
     **kwargs: Keyword arguments for the function getArenaEdge
-    
+
     Returns
     -------
     pxlSize: scalar
@@ -917,7 +920,7 @@ def getPxlSize(img,diam = 50,**kwargs):
     return pxlSize, coords
 
 def getSwimInfo(data,ampZscoreThr = 1, slopeZscoreThr = 1.5,frameRate=1000, \
-    stimFrame=99, minLatency = 5e-3, maxSwimFreq =100, outputMode = 'dict'):        
+    stimFrame=99, minLatency = 5e-3, maxSwimFreq =100, outputMode = 'dict'):
     '''
     getSwimInfo_dict - When given the data variable output by loadMultiFishTrkFiles,
         returns a variable that contains complete information about each swim
@@ -925,10 +928,10 @@ def getSwimInfo(data,ampZscoreThr = 1, slopeZscoreThr = 1.5,frameRate=1000, \
     swimInfo = getSwimInfo(data,ampZscoreThr = 1, slopeZscoreThr = 1.5,\
         frameRate =1000, stimFrame, minLatency = 5e-3, maxSwimFreq = 100)
     Inputs:
-    data - 'data' variable containing .trk file info loaded by 
+    data - 'data' variable containing .trk file info loaded by
         loadMultiFishTrkFiles. 'data' is a list variable with each element
         corresponding to a fish. Each element is dictionary, that must contain
-        the following keys for the function to work,'curvature', 'axis1', 
+        the following keys for the function to work,'curvature', 'axis1',
         'axis2', 'axis3'
     ampZcoreThr - Amplitude threshold in zscore (for determining peaks in signal)
     slopeZscoreThr - Slope threshold in zscsore  (for determining onset in signal)
@@ -937,7 +940,7 @@ def getSwimInfo(data,ampZscoreThr = 1, slopeZscoreThr = 1.5,frameRate=1000, \
     minLatency - Minimum latency after the stimulus from when to start looking for peaks
     maxSwimFreq - Max expected swim frequency (for avoiding double peak detection
                     because of possible noise)
-    outputMode - 'dict' or 'list', specifying which mode to output data. 
+    outputMode - 'dict' or 'list', specifying which mode to output data.
         Default is 'dict', wherein swimInfo variable-type hierarchy is
         list:list:dict:dict, where as 'list' mode outputs data as
         list:list:list:list (See Outputs below:)
@@ -948,50 +951,50 @@ def getSwimInfo(data,ampZscoreThr = 1, slopeZscoreThr = 1.5,frameRate=1000, \
         swimInfo[fishNum][trlNum]['sideKey']['variableKey']
             fishNum - Fish number (same length as input variable 'data')
             trlNum - Trial number (same length as data['someKey'])
-            sideKey - 'left' or right corresponding to bend info to the left or 
+            sideKey - 'left' or right corresponding to bend info to the left or
             right respectively
             variableKey - 'pkLat','pkAmp','angVel' corresponding either to peak
-            latencies from stim onset, peak amplitudes, angular velocity 
-            (i.e. peak amp/time from previous peak or valley)  
-        In 'list' mode:        
+            latencies from stim onset, peak amplitudes, angular velocity
+            (i.e. peak amp/time from previous peak or valley)
+        In 'list' mode:
         swimInfo[fishNum][trlNum][sideNum][variableNum]
             fishNum - Fish number (same length as input variable 'data')
             trlNum - Trial number (same length as data['someKey'])
-            sideNum - 0 or 1 corresponding to bend info to the left or right 
+            sideNum - 0 or 1 corresponding to bend info to the left or right
                 respectively
-            variableNum - 0, 1, 2 corresponding either to peak latencies from 
-                stim onset, peak amplitudes, angular velocity (i.e. peak amp/time 
-                    from previous peak or valley)     
-        
+            variableNum - 0, 1, 2 corresponding either to peak latencies from
+                stim onset, peak amplitudes, angular velocity (i.e. peak amp/time
+                    from previous peak or valley)
+
     '''
-    import numpy as np    
-    import apCode.SignalProcessingTools as spt    
-    
+    import numpy as np
+    import apCode.SignalProcessingTools as spt
+
     minOnsetInd = int(minLatency*frameRate) + stimFrame
     minPkDist = int((1/maxSwimFreq)*frameRate)
     out = []
     for fishNum,fishData in enumerate(data):
-        temp =[]       
+        temp =[]
         for trlNum, sig in enumerate(fishData['curvature']):
             sideDict = {}
             sideDict['left'] = {}
             sideDict['right'] = {}
             pks_left, pks_left_relAmp = spt.findPeaks(spt.zscore(sig),\
-                thr =ampZscoreThr, minPkDist=minPkDist)       
-            
+                thr =ampZscoreThr, minPkDist=minPkDist)
+
             delInds = np.where(pks_left < minOnsetInd)
             pks_left = np.delete(pks_left,delInds)
-            pks_left_relAmp = np.delete(pks_left_relAmp,delInds)             
+            pks_left_relAmp = np.delete(pks_left_relAmp,delInds)
             pks_right,pks_right_relAmps = spt.findPeaks(spt.zscore(-sig),\
                 thr =ampZscoreThr,minPkDist=minPkDist)
             delInds = np.where(pks_right < minOnsetInd)
             pks_right = np.delete(pks_right,delInds)
-            pks_right_relAmps = np.delete(pks_right_relAmps,delInds)            
-            pks_left_ms = ((pks_left-stimFrame)*(1000/frameRate)).astype(float)           
+            pks_right_relAmps = np.delete(pks_right_relAmps,delInds)
+            pks_left_ms = ((pks_left-stimFrame)*(1000/frameRate)).astype(float)
             pks_right_ms = ((pks_right-stimFrame)*(1000/frameRate)).astype(float)
-            pks_left_amp = sig[pks_left]            
+            pks_left_amp = sig[pks_left]
             pks_right_amp = sig[pks_right]
-            pks_both = np.union1d(pks_left,pks_right)                        
+            pks_both = np.union1d(pks_left,pks_right)
             onsetInd = getOnsetInd(sig,ampZscoreThr = ampZscoreThr,\
                 slopeZscoreThr=slopeZscoreThr)
             if np.isnan(onsetInd):
@@ -999,15 +1002,15 @@ def getSwimInfo(data,ampZscoreThr = 1, slopeZscoreThr = 1.5,frameRate=1000, \
                 print('Re-seeking onset by lowering slope thresh, fish #', fishNum, 'trl #', trlNum)
             multFac = 0.9
             dynThr = slopeZscoreThr
-            count = 0            
+            count = 0
             while (len(onsetInd)==0) & (count <10):
-                count = count+1                 
+                count = count+1
                 print('thr=', dynThr)
                 onsetInd= getOnsetInd(sig, ampZscoreThr=ampZscoreThr, \
                     slopeZscoreThr=dynThr)
                 dynThr = np.round(dynThr*multFac*100)/100
                 if np.isnan(onsetInd):
-                    onsetInd= np.array([])                    
+                    onsetInd= np.array([])
             try:
                 pks_both_onset = np.union1d(onsetInd,pks_both)
                 w = np.diff(sig[pks_both_onset])/np.diff(pks_both_onset*(1./frameRate))
@@ -1028,14 +1031,14 @@ def getSwimInfo(data,ampZscoreThr = 1, slopeZscoreThr = 1.5,frameRate=1000, \
                 sideDict['left'] = {'pkLat': pks_left_ms, \
                     'pkAmp': pks_left_amp,'pkAmp_rel': pks_left_relAmp,\
                     'angVel': w_left}
-                sideDict['right'] = {'pkLat': pks_right_ms, 
+                sideDict['right'] = {'pkLat': pks_right_ms,
                     'pkAmp': pks_right_amp,'pkAmp_rel': pks_right_relAmps, \
                     'angVel': w_right}
                 sideDict['turnId']= turnId
                 sideDict['onset'] = 1000*(onsetInd-stimFrame)/frameRate
                 temp.append(sideDict)
             elif outputMode.lower() == 'list':
-                onsetLat = 1000*(onsetInd-stimFrame)/frameRate 
+                onsetLat = 1000*(onsetInd-stimFrame)/frameRate
                 temp.append([[pks_left_ms, pks_left_amp,pks_left_relAmp,w_left],\
                     [pks_right_ms,pks_right_amp,pks_right_relAmps,w_right],\
                     [turnId],[onsetLat]])
@@ -1047,11 +1050,11 @@ def getSwimInfo(data,ampZscoreThr = 1, slopeZscoreThr = 1.5,frameRate=1000, \
         ['TurnId: 1 = Left first, -1 = Right First']]
     out.append(varNames)
     return out
-    
+
 def loadFishData(trkFileDir,fileStem = 'singlefish'):
     '''
     Reads multiple, multi-trial .trk files created by Flote and returns data list
-        where each element is a dictionary that corresponds to data from a 
+        where each element is a dictionary that corresponds to data from a
         different fish. The keys of the dictionary indicate the parameter for
         which the timeseries was extracted and the values are lists where each
         element of the list corresponds to a different trial
@@ -1059,34 +1062,34 @@ def loadFishData(trkFileDir,fileStem = 'singlefish'):
         trkFileFileDir - Directory containing the various .trk files
     '''
     import csv, os
-    import numpy as np       
+    import numpy as np
     def readMultiTrialTrkFile(filePath):
-        
+
         '''
-        readMultiTrialTrkFile - reads single fish, multitrial .trk file created by Flote and returns in 
+        readMultiTrialTrkFile - reads single fish, multitrial .trk file created by Flote and returns in
             a dictionary
         Inputs:
         filePath - full file path for .trk file, i.e. os.path.join (fileDir, fileName)
         '''
-        hdrs = []    
+        hdrs = []
         data = []
         supData = []
         with open(filePath) as csvFile:
             reader = csv.reader(csvFile,delimiter = '\t')
-            for rowNum,row in enumerate(reader):                      
-                try:                    
+            for rowNum,row in enumerate(reader):
+                try:
                     np.float64(row[0])
-                    data.append(row)                    
-                except:                    
+                    data.append(row)
+                except:
                     supData.append(np.array(data))
-                    data = []                                                                  
+                    data = []
                     hdrs.append(row)
-            supData.append(np.array(data))           
-        supData.pop(0)       
+            supData.append(np.array(data))
+        supData.pop(0)
         return np.transpose(supData,[2, 0, 1]),hdrs
-    
+
     def listToDict(supData,hdrs):
-        dictData = {}       
+        dictData = {}
         for hdrNum,hdr in enumerate(hdrs[0]):
             try:
                 dictData[hdr] = np.float64(supData[hdrNum])
@@ -1096,21 +1099,21 @@ def loadFishData(trkFileDir,fileStem = 'singlefish'):
 
     fishData = []
     filesInDir = os.listdir(trkFileDir)
-    filesInDir = list(np.sort(list(filter(lambda x: x.startswith(fileStem),filesInDir))))    
+    filesInDir = list(np.sort(list(filter(lambda x: x.startswith(fileStem),filesInDir))))
     for file in filesInDir:
         dicData = {}
         print('Reading file', file, '...')
         filePath = os.path.join(trkFileDir,file)
-        trlData,hdrs = readMultiTrialTrkFile(filePath)        
-        dicData = listToDict(trlData,hdrs)        
+        trlData,hdrs = readMultiTrialTrkFile(filePath)
+        dicData = listToDict(trlData,hdrs)
         dicData['fileName']  = filePath
         #print(dicData.keys())
-        fishData.append(dicData)   
-    return fishData    
+        fishData.append(dicData)
+    return fishData
 
 def loadMultiTrialTrkFile(filePath):
     '''
-    loadMultiTrialTrkFile - reads single fish, multitrial .trk file created by Flote and returns in 
+    loadMultiTrialTrkFile - reads single fish, multitrial .trk file created by Flote and returns in
         a dictionary
     data = loadMultiTrialTrkFile(filePath)
     Inputs:
@@ -1118,37 +1121,37 @@ def loadMultiTrialTrkFile(filePath):
     '''
     import csv
     import numpy as np
-    hdrs = []    
+    hdrs = []
     data = []
     supData = []
     with open(filePath) as csvFile:
         reader = csv.reader(csvFile,delimiter = '\t')
-        for rowNum,row in enumerate(reader):                      
+        for rowNum,row in enumerate(reader):
             try:
                 np.float64(row[0])
-                data.append(row)               
-            except:                 
+                data.append(row)
+            except:
                 supData.append(np.array(data))
-                data = []                                                                  
+                data = []
                 hdrs.append(row)
-        supData.append(np.array(data))   
+        supData.append(np.array(data))
     supData.pop(0)
-       
+
     dicData = {}
     for hdrNum, hdr in enumerate(hdrs[0]):
         for dsNum, dataSet in enumerate(supData):
             if dsNum == 0:
-                dicData[hdr] = []                
+                dicData[hdr] = []
             try:
                 dicData[hdr].append(np.float64(dataSet[:,hdrNum]))
             except:
                 dicData[hdr].append(dataSet[:,hdrNum])
             dicData['fileName'] = filePath
-        
+
     print('Data dictionary with the following keys...', \
-        '\n', dicData.keys())       
+        '\n', dicData.keys())
     return dicData
-     
+
 def matchByOnset_old(x,y,nPre = 30, padType = 'zero'):
     """
     Given two signals with single swim episodes, aligns them w.r.t to their onsets, and
@@ -1177,7 +1180,7 @@ def matchByOnset_old(x,y,nPre = 30, padType = 'zero'):
     if lenDiff<0:
         padLens[0] = -lenDiff
         if padType.lower() == 'zero':
-            x = np.pad(x,pad_width=(nPre,-lenDiff), mode = 'constant', 
+            x = np.pad(x,pad_width=(nPre,-lenDiff), mode = 'constant',
                        constant_values = (0,0))
             y = np.pad(y,pad_width = (nPre,0), mode = 'constant',
                        constant_values = (0,0))
@@ -1187,14 +1190,14 @@ def matchByOnset_old(x,y,nPre = 30, padType = 'zero'):
     elif lenDiff>0:
         padLens[1] = lenDiff
         if padType.lower() == 'zero':
-            y = np.pad(y,pad_width=(nPre,lenDiff), mode = 'constant', 
+            y = np.pad(y,pad_width=(nPre,lenDiff), mode = 'constant',
                        constant_values = (0,0))
             x = np.pad(x,pad_width = (nPre,0), mode = 'constant',
                        constant_values = (0,0))
         else:
             y = np.pad(y,pad_width=(nPre, lenDiff), mode = 'edge')
             x = np.pad(x,pad_width = (nPre,0), mode = 'edge')
-    on_x, on_y = swimOnAndOffsets(x)[0], swimOnAndOffsets(y)[0] 
+    on_x, on_y = swimOnAndOffsets(x)[0], swimOnAndOffsets(y)[0]
     if np.size(on_x)>1:
         on_x = on_x[0]
     if np.size(on_y)>1:
@@ -1210,15 +1213,15 @@ def matchByOnset_old(x,y,nPre = 30, padType = 'zero'):
     x = np.roll(x,-on_x+nPre)
     y = np.roll(y,-on_y+nPre)
     c = np.corrcoef(x,y)[0,1]
-    
-    out = {'signals': np.array((x,y)).T, 'signs':np.array((sign_x, sign_y)), 
+
+    out = {'signals': np.array((x,y)).T, 'signs':np.array((sign_x, sign_y)),
            'shifts': np.array((-on_x+nPre, -on_y+nPre)).ravel(), 'correlation': c,
            'padType': padType, 'padLens': padLens,'nPre': nPre}
-    
+
     def transform(out,signals, padType = None):
         """
         Applies the same transform to another set of signals
-        
+
         Parameters
         ----------
         out: Dictionary
@@ -1238,11 +1241,11 @@ def matchByOnset_old(x,y,nPre = 30, padType = 'zero'):
             if not padType:
                 padType = out['padType']
             if padType == 'zero':
-                foo = np.pad(s,pad_width = (nPre,out['padLens'][count]), mode = 'constant', 
+                foo = np.pad(s,pad_width = (nPre,out['padLens'][count]), mode = 'constant',
                              constant_values = (0,))
             else:
-                foo = np.pad(s,pad_width = (nPre,out['padLens'][count]), mode = padType) 
-                
+                foo = np.pad(s,pad_width = (nPre,out['padLens'][count]), mode = padType)
+
             foo = out['signs'][count]*np.roll(foo,out['shifts'][count])
             signals_new.append(foo)
         return np.array(signals_new)
@@ -1280,38 +1283,38 @@ def matchByOnset(x,y, padType = 'zero'):
     dx, dy = np.gradient(x), np.gradient(y)
     sign_x = np.sign(dx[on_x])
     sign_y = np.sign(dy[on_y])
-    
+
     pre_x = on_y-on_x
-    pre_y = -pre_x    
+    pre_y = -pre_x
     pre_x = int(np.max((0,pre_x)))
     pre_y = int(np.max((0,pre_y)))
     preLens = np.array((pre_x,pre_y)).astype(int)
     len_x = len(x)+pre_x
-    len_y = len(y)+pre_y 
+    len_y = len(y)+pre_y
     post_x = len_y-len_x
     post_y = -post_x
     post_x = np.max((0, post_x))
     post_y = np.max((0,post_y))
     postLens = np.array((post_x,post_y)).astype(int)
     if padType.lower() == 'zero':
-        x  = sign_x*np.pad(x,pad_width = (pre_x,post_x), mode = 'constant', 
+        x  = sign_x*np.pad(x,pad_width = (pre_x,post_x), mode = 'constant',
                     constant_values = (0,0))
-        y = sign_y*np.pad(y,pad_width = (pre_y, post_y), mode = 'constant', 
+        y = sign_y*np.pad(y,pad_width = (pre_y, post_y), mode = 'constant',
                    constant_values = (0,0))
     else:
         x  = sign_x*np.pad(x,pad_width = (pre_x,post_x), mode = 'edge')
-        y = sign_y*np.pad(y,pad_width = (pre_y, post_y), mode = 'edge')  
+        y = sign_y*np.pad(y,pad_width = (pre_y, post_y), mode = 'edge')
 
     c = np.corrcoef(x,y)[0,1]
     padLens = np.array((preLens,postLens)).T
-    
-    out = {'signals': np.array((x,y)).T, 'signs': np.array((sign_x, sign_y)), 
+
+    out = {'signals': np.array((x,y)).T, 'signs': np.array((sign_x, sign_y)),
            'correlation': c, 'padType': padType, 'padLens': padLens}
-    
+
     def transform(out,signals, padType = None):
         """
         Applies the same transform to another set of signals
-        
+
         Parameters
         ----------
         out: Dictionary
@@ -1327,16 +1330,16 @@ def matchByOnset(x,y, padType = 'zero'):
             Transformed signals
         """
         signals_new = []
-        for count, s in enumerate(signals):           
+        for count, s in enumerate(signals):
             if not padType:
                 padType = out['padType']
             if padType == 'zero':
-                foo = np.pad(s, pad_width = (out['padLens'][count][0], out['padLens'][count][1]), 
+                foo = np.pad(s, pad_width = (out['padLens'][count][0], out['padLens'][count][1]),
                              mode = 'constant', constant_values = (0,0))
             else:
-                foo = np.pad(s, pad_width = (out['padLens'][count][0],out['padLens'][count][1]), 
-                             mode = 'edge')       
-            
+                foo = np.pad(s, pad_width = (out['padLens'][count][0],out['padLens'][count][1]),
+                             mode = 'edge')
+
             foo = out['signs'][count]*foo
             signals_new.append(foo)
         return np.array(signals_new).T
@@ -1375,23 +1378,23 @@ def openMatFile(path, name_str = None, mode = 'r'):
         out = h5py.File(os.path.join(path,matFile), mode= 'r')
 #    print('Data has the following keys: {}'.format(list(out.keys())))
     return out
-   
+
 def plotAllTrials(data,key = 'curvature', yShift = 0):
     '''
     plotAllTrials - Plots all the timeseries specified by a key
-    
+
     plotAllTrials(data, key = 'curvature', yShift = 0)
     Inputs:
     data -The data variable
     key - Plots all timeseries specified by the key
     yShift - The amount to shift the traces by along the y-axis
     '''
-    import matplotlib.pyplot as plt    
+    import matplotlib.pyplot as plt
     var = data[key]
     plt.figure(figsize = (14,6))
     for trlNum,trl in enumerate(var):
-        plt.plot(data['time'],trl-(yShift*trlNum),'k')       
-        
+        plt.plot(data['time'],trl-(yShift*trlNum),'k')
+
 
 def prepareForUnet_1ch(I, sz = (512,512), n_jobs = 1,verbose = 5):
     """
@@ -1408,11 +1411,11 @@ def prepareForUnet_1ch(I, sz = (512,512), n_jobs = 1,verbose = 5):
         I = [volt.img.resize(img, sz) for img in I]
     I = np.array(I)
     return I[...,np.newaxis]
-    
+
 
 def prepareForUnet_2ch(images,images_back,sz = (512,512)):
     """
-    Resizes and reshapes images for U-net (2 image channels) 
+    Resizes and reshapes images for U-net (2 image channels)
     training or prediction.
     Parameters
     ----------
@@ -1426,7 +1429,7 @@ def prepareForUnet_2ch(images,images_back,sz = (512,512)):
     -------
     I: array, ([T,], M, N, 2), where T >= 1, and I[...,0] = raw images,
         and I[...,1] is background subtracted images
-    """    
+    """
     import numpy as np
     import apCode.volTools as volt
     images = volt.img.resize(images, sz)
@@ -1439,7 +1442,7 @@ def prepareForUnet_2ch(images,images_back,sz = (512,512)):
     images = images[...,np.newaxis]
     images_bs = (images_bs[..., np.newaxis])
     return np.concatenate((images,images_bs),axis = 3).astype(int)
-       
+
 
 def radiatingLinesAroundAPoint(pt, lineLength, dTheta = 15, dLine = 1):
     '''
@@ -1451,7 +1454,7 @@ def radiatingLinesAroundAPoint(pt, lineLength, dTheta = 15, dLine = 1):
     lineLength - length in pixels of the the line segments
     dTheta - angular spacing of the lines around the point. For instance setting
         dTheta = 90, returns 4 lines at right angles to each other
-    dLine - Radial distance between points in the line 
+    dLine - Radial distance between points in the line
     '''
     import apCode.volTools as volt
     import numpy as np
@@ -1469,9 +1472,9 @@ def radiatingLinesAroundAPoint(pt, lineLength, dTheta = 15, dLine = 1):
         #inds[0] = inds[0] + pt[0]
         #inds[1] = inds[1] + pt[1]
         lines.append(line)
-    return lines       
-    
-    
+    return lines
+
+
 def rotate2DPoints(pointArray,theta):
     '''
     rotate2DPoints - when given an array of points in 2D space, returns the set of points
@@ -1487,12 +1490,12 @@ def rotate2DPoints(pointArray,theta):
         pointArray = np.transpose(pointArray)
     theta = theta*(np.pi/180)
     T_rot = np.asmatrix([[np.cos(theta), -np.sin(theta)],[np.sin(theta),np.cos(theta)]])
-    pointArray_rot = T_rot*pointArray    
-    return np.array(pointArray_rot)  
+    pointArray_rot = T_rot*pointArray
+    return np.array(pointArray_rot)
 
 def saveImagesForTraining(imgDir, imgInds):
     """
-    Copies specified images from a directory into a subdirectory for later use in 
+    Copies specified images from a directory into a subdirectory for later use in
     training NNs
     Parameters
     ----------
@@ -1506,23 +1509,23 @@ def saveImagesForTraining(imgDir, imgInds):
     """
     import shutil as sh
     import os
-    import apCode.FileTools as ft    
+    import apCode.FileTools as ft
     import time
-    
+
     dir_proc = os.path.join(imgDir,'proc')
     dir_train = os.path.join(dir_proc,'Training set_{}'.format(time.strftime('%Y%m%d')))
     dir_train_images = os.path.join(dir_train, 'images')
-        
+
     if not os.path.exists(dir_proc):
         os.mkdir(dir_proc)
     if not os.path.exists(dir_train):
         os.mkdir(dir_train)
     if not os.path.exists(dir_train_images):
         os.mkdir(dir_train_images)
-    
+
     imgNames = ft.findAndSortFilesInDir(imgDir, ext = 'bmp')
-    [sh.copy(os.path.join(imgDir, imgName),dir_train_images) for imgName in imgNames[imgInds]]    
-    
+    [sh.copy(os.path.join(imgDir, imgName),dir_train_images) for imgName in imgNames[imgInds]]
+
 def sortFastAndSlowFrames(imgDir,numFastFrames = 600, offset_fast = 0, numSlowFrames =3600,\
                           ext = 'bmp'):
     '''
@@ -1530,19 +1533,19 @@ def sortFastAndSlowFrames(imgDir,numFastFrames = 600, offset_fast = 0, numSlowFr
     fastDir, nTrls = sortFastAndSlowFrames(imgDir,...)
     Inputs:
     imgDir - Directory containing fast and slow images
-    numFastFrames - Num of fast frames in each trial  
+    numFastFrames - Num of fast frames in each trial
         (num of pre-stim trials + num of post-stim trials)
     offset_fast - The number corresponding to the first fast frame
     numSlowFrames - The number of slow trials in each trial
     ext - Image extension
-    
+
     '''
     import os, sys
     import shutil as sh
     import time
-    import numpy as np    
-    ## Read all file names in dir, omit non-img files (based on extension), 
-    ##  sort in alphanumberic order, and collect into a list    
+    import numpy as np
+    ## Read all file names in dir, omit non-img files (based on extension),
+    ##  sort in alphanumberic order, and collect into a list
     print("Obtaining img file names...")
     startTime= time.time()
     if ext.startswith('.') == False:
@@ -1551,28 +1554,28 @@ def sortFastAndSlowFrames(imgDir,numFastFrames = 600, offset_fast = 0, numSlowFr
     if len(alreadyMoved)>0:
         sys.exit('Failed! The files seem to have already been moved, if not, \
         delete ''.moved'' file in image directory and retry')
-    imgsInFldr = np.sort(list(filter(lambda x: x.endswith(ext), os.listdir(imgDir))))    
+    imgsInFldr = np.sort(list(filter(lambda x: x.endswith(ext), os.listdir(imgDir))))
     frameList = np.arange(len(imgsInFldr))
     trlLen = numFastFrames + numSlowFrames
     remList = np.mod(frameList, trlLen)
-    fastInds = np.array(np.where(remList <= (numFastFrames-1)))[0]  
+    fastInds = np.array(np.where(remList <= (numFastFrames-1)))[0]
     fastList = frameList[fastInds + offset_fast]
-    slowList = np.setdiff1d(frameList,fastList)    
+    slowList = np.setdiff1d(frameList,fastList)
     if np.mod(len(imgsInFldr),numFastFrames+numSlowFrames)!=0:
         sys.exit('# of images in folder does not evenly divide by # of images \
         in a trial, check to make sure inputs are correct!')
-    nTrls = len(imgsInFldr)/(numFastFrames + numSlowFrames)     
-    print(int(nTrls), 'trials detected!')    
+    nTrls = len(imgsInFldr)/(numFastFrames + numSlowFrames)
+    print(int(nTrls), 'trials detected!')
     print('Obtaining fast frames...')
     fastFrames = imgsInFldr[fastList]
     print('Obtaining slow frames...')
     slowFrames = imgsInFldr[slowList]
     ts = time.strftime('%m-%d-%y-%H%M%S',time.localtime())
     fastDir = os.path.join(imgDir,'fastDir_' + ts)
-    os.mkdir(fastDir)    
+    os.mkdir(fastDir)
     slowDir = os.path.join(imgDir,'slowDir_' + ts)
-    os.mkdir(slowDir)   
-    
+    os.mkdir(slowDir)
+
     print('Moving fast frames...')
     print(fastDir)
     trlCount = 0
@@ -1584,7 +1587,7 @@ def sortFastAndSlowFrames(imgDir,numFastFrames = 600, offset_fast = 0, numSlowFr
         if np.mod(frameNum,numFastFrames)==0:
             trlCount = trlCount + 1
             print('Trl', trlCount, 'complete')
-   
+
     print('Moving slow frames...')
     print(slowDir)
     trlCount = 0
@@ -1596,7 +1599,7 @@ def sortFastAndSlowFrames(imgDir,numFastFrames = 600, offset_fast = 0, numSlowFr
         if np.mod(frameNum,numSlowFrames)==0:
             trlCount = trlCount+1
             print('Trl', trlCount, 'complete')
-            
+
     open(os.path.join(imgDir,'.moved'),mode = 'w').close()
     print (int((time.time()-startTime)/60), 'min')
     print(time.asctime())
@@ -1609,23 +1612,23 @@ def sortFastAndSlowFrames_parallel(imgDir,numFastFrames = 600, offset_fast = 0, 
     fastDir, nTrls = sortFastAndSlowFrames(imgDir,...)
     Inputs:
     imgDir - Directory containing fast and slow images
-    numFastFrames - Num of fast frames in each trial  
+    numFastFrames - Num of fast frames in each trial
         (num of pre-stim trials + num of post-stim trials)
     offset_fast - The number corresponding to the first fast frame
     numSlowFrames - The number of slow trials in each trial
     ext - Image extension
     numCores - Number of CPU cores to use (if fewer than this many cores are available,
         then uses all those)
-    
+
     '''
     import os, sys
     import shutil as sh
     import time
     import numpy as np
     from joblib import Parallel, delayed
-    import multiprocessing as mp    
-    ## Read all file names in dir, omit non-img files (based on extension), 
-    ##  sort in alphanumberic order, and collect into a list    
+    import multiprocessing as mp
+    ## Read all file names in dir, omit non-img files (based on extension),
+    ##  sort in alphanumberic order, and collect into a list
     print("Obtaining img file names...")
     startTime= time.time()
     if ext.startswith('.') == False:
@@ -1634,42 +1637,42 @@ def sortFastAndSlowFrames_parallel(imgDir,numFastFrames = 600, offset_fast = 0, 
     if len(alreadyMoved)>0:
         sys.exit('Failed! The files seem to have already been moved, if not, \
         delete ''.moved'' file in image directory and retry')
-    imgsInFldr = np.sort(list(filter(lambda x: x.endswith(ext), os.listdir(imgDir))))    
+    imgsInFldr = np.sort(list(filter(lambda x: x.endswith(ext), os.listdir(imgDir))))
     frameList = np.arange(len(imgsInFldr))
     trlLen = numFastFrames + numSlowFrames
     remList = np.mod(frameList, trlLen)
-    fastInds = np.array(np.where(remList <= (numFastFrames-1)))[0]  
+    fastInds = np.array(np.where(remList <= (numFastFrames-1)))[0]
     fastList = frameList[fastInds + offset_fast]
-    slowList = np.setdiff1d(frameList,fastList)    
+    slowList = np.setdiff1d(frameList,fastList)
     if np.mod(len(imgsInFldr),numFastFrames+numSlowFrames)!=0:
         sys.exit('# of images in folder does not evenly divide by # of images \
         in a trial, check to make sure inputs are correct!')
-    nTrls = len(imgsInFldr)/(numFastFrames + numSlowFrames)     
-    print(int(nTrls), 'trials detected!')    
+    nTrls = len(imgsInFldr)/(numFastFrames + numSlowFrames)
+    print(int(nTrls), 'trials detected!')
     print('Obtaining fast frames...')
-    fastFrames = imgsInFldr[fastList]    
+    fastFrames = imgsInFldr[fastList]
     print('Obtaining slow frames...')
     slowFrames = imgsInFldr[slowList]
     ts = time.strftime('%m-%d-%y-%H%M%S',time.localtime())
     fastDir = os.path.join(imgDir,'fastDir_' + ts)
-    os.mkdir(fastDir)    
+    os.mkdir(fastDir)
     slowDir = os.path.join(imgDir,'slowDir_' + ts)
-    os.mkdir(slowDir)   
+    os.mkdir(slowDir)
     fastFrames = [os.path.join(imgDir, frame) for frame in fastFrames]
     slowFrames = [os.path.join(imgDir,frame) for frame in slowFrames]
     numCores = np.min([mp.cpu_count(),numCores])
     print('Using', numCores, 'cpu cores')
     print('Moving fast frames to', fastDir)
-        
+
     Parallel(n_jobs = numCores,verbose = 5)(delayed(sh.move)(src,fastDir) for src in fastFrames)
-   
-    print('Moving slow frames to', slowDir) 
-    Parallel(n_jobs = numCores,verbose =5)(delayed(sh.move)(src,slowDir) for src in slowFrames)        
+
+    print('Moving slow frames to', slowDir)
+    Parallel(n_jobs = numCores,verbose =5)(delayed(sh.move)(src,slowDir) for src in slowFrames)
     open(os.path.join(imgDir,'.moved'),mode = 'w').close()
     print (int((time.time()-startTime)/60), 'min')
     print(time.asctime())
     return fastDir, slowDir, int(nTrls)
-    
+
 def sortFastAndSlowVibAndDark(fishDir,numFastFrames = 750, numSlowFrames = 30*60,\
     imgExt = 'bmp',process ='parallel'):
     '''
@@ -1693,15 +1696,15 @@ def sortFastAndSlowVibAndDark(fishDir,numFastFrames = 750, numSlowFrames = 30*60
         else:
             [fastDir,slowDir,nTrls] = sortFastAndSlowFrames(imgDir,\
             numFastFrames=numFastFrames, numSlowFrames=numSlowFrames, ext = imgExt)
-        nTrls = int(nTrls)                                      
+        nTrls = int(nTrls)
         print('Sorting vib and dark trls in fast dir...')
-        #filesInDir = ft.findAndSortFilesInDir(fastDir, ext = imgExt)    
+        #filesInDir = ft.findAndSortFilesInDir(fastDir, ext = imgExt)
         trlLists = [list(np.arange(0,nTrls,2)),list(np.arange(1,nTrls,2))]
         dstLists = [os.path.join(fastDir,'vib'),os.path.join(fastDir,'dark')]
         sortIntoTrls(fastDir,numFastFrames,trlLists,dstLists)
-    
+
         print('Sorting vib and tap trls in slow dir')
-        #filesInDir = ft.findAndSortFilesInDir(slowDir, ext = imgExt)    
+        #filesInDir = ft.findAndSortFilesInDir(slowDir, ext = imgExt)
         trlLists = [list(np.arange(0,nTrls,2)),list(np.arange(1,nTrls,2))]
         dstLists = [os.path.join(slowDir,'vib'),os.path.join(slowDir,'dark')]
         sortIntoTrls(slowDir,numSlowFrames,trlLists,dstLists)
@@ -1719,7 +1722,7 @@ def sortIntoTrls(trlDir, trlSize, trlLists = [], dstLists = [], ext = 'bmp', chu
     trlLists - List of sublists containing indices of trls to be moved. If trLists = [],
         then creates it automatically based on 'chunkSize' (default =1), which
         determines how many trials to put in subdirectory.
-    dstLists - List of destination paths where to move the different trial 
+    dstLists - List of destination paths where to move the different trial
         sublists. If trlList = [], a new trList is generated as described above.
         If for len(trlList) != len(dstLists) then generates a new dstLists.
     chunkSize - Scalar; the number of trials to chunk into a single
@@ -1728,7 +1731,7 @@ def sortIntoTrls(trlDir, trlSize, trlLists = [], dstLists = [], ext = 'bmp', chu
     import os, sys, time
     import shutil as sh
     import numpy as np
-    import apCode.FileTools as ft   
+    import apCode.FileTools as ft
     ## Read all files in trlDir
     filesInDir = ft.findAndSortFilesInDir(trlDir,ext= ext)
     N = len(filesInDir)
@@ -1739,7 +1742,7 @@ def sortIntoTrls(trlDir, trlSize, trlLists = [], dstLists = [], ext = 'bmp', chu
     else:
         sys.exit("'trlSize' does not evenly divide into the number of files in the \
         dir, check to make sure inputs are specified correctly!")
-    
+
     if len(trlLists)==0:
         trlLists = np.arange(0,nTrls).astype(int)
         trlLists= sublistsFromList(trlLists,chunkSize)
@@ -1747,17 +1750,17 @@ def sortIntoTrls(trlDir, trlSize, trlLists = [], dstLists = [], ext = 'bmp', chu
         dstLists = []
         for item in trlLists:
             foo = ''
-            for item_item in item:               
+            for item_item in item:
                 foo = foo + str(item_item) + '-'
-            foo = foo[:-1]           
-            dstLists.append(os.path.join(trlDir,'Trl_' + foo))        
-        
+            foo = foo[:-1]
+            dstLists.append(os.path.join(trlDir,'Trl_' + foo))
+
     ## Sublist files into trials
     filesInDir_trl = sublistsFromList(filesInDir,trlSize)
     tic = time.time()
     if type(trlLists[0]) is list:
         for trlListNum, trlList in enumerate(trlLists):
-            print('Moving the following trials', trlList)           
+            print('Moving the following trials', trlList)
             currList = [filesInDir_trl[item] for item in trlList]
             currList = np.array(currList).ravel()
             dst = dstLists[trlListNum]
@@ -1773,10 +1776,10 @@ def sortIntoTrls(trlDir, trlSize, trlLists = [], dstLists = [], ext = 'bmp', chu
             os.mkdir(dst)
         for item in currList:
             sh.move(os.path.join(trlDir,item),dst)
-    
+
     print(int(time.time()-tic), 'sec')
-    
-    
+
+
 def sublistsFromList(inputList,chunkSize):
     '''
     Given a list, chunks it into sizes specified and returns the chunks as items
@@ -1786,18 +1789,18 @@ def sublistsFromList(inputList,chunkSize):
     subList,supList = [],[]
     for itemNum, item in enumerate(inputList):
         if np.mod(itemNum+1,chunkSize)==0:
-            subList.append(item)            
+            subList.append(item)
             supList.append(subList)
             subList = []
         else:
-             subList.append(item)   
+             subList.append(item)
     supList.append(subList)
     supList = list(filter(lambda x: len(x)!=0, supList)) # Remove zero-length lists
     return supList
 
 def swimOnAndOffsets(x, ker_len = 50, thr =1, thr_slope = 0.5, plotBool = False):
     """
-    Given a timeseries containing swim episodes, returns the estimated onsets 
+    Given a timeseries containing swim episodes, returns the estimated onsets
     and offsets of the swims
     Parameters
     ----------
@@ -1807,14 +1810,14 @@ def swimOnAndOffsets(x, ker_len = 50, thr =1, thr_slope = 0.5, plotBool = False)
         Size of the kernel to smooth swim with. A 100 ms kernel works well,
         which at 500 Hz sampling rate is 50 points.
     thr: scalar
-        Threshold in units of std for considering something as signal and 
+        Threshold in units of std for considering something as signal and
         not noise in the smoothed timeseries (i.e., after convolution of the
         timeseries with the causal kernel).
     thr_slope: scalar
         Threshold in units of std when looking at the derivative of the smoothed
         timeseries
     plotBool = boolean
-        If True, the plots std-normalized signal and convolved signal with overlaid on 
+        If True, the plots std-normalized signal and convolved signal with overlaid on
         and offsets
     Returns
     -------
@@ -1823,8 +1826,8 @@ def swimOnAndOffsets(x, ker_len = 50, thr =1, thr_slope = 0.5, plotBool = False)
     offs: (n,) array
         Offsets of swims in timeseries
     signs: (n,) array
-        Sign of slope the timeseries at onset. This can be used to align 
-        signals, for say plotting or averaging.   
+        Sign of slope the timeseries at onset. This can be used to align
+        signals, for say plotting or averaging.
     """
     import apCode.SignalProcessingTools as spt
     import numpy as np
@@ -1840,55 +1843,55 @@ def swimOnAndOffsets(x, ker_len = 50, thr =1, thr_slope = 0.5, plotBool = False)
     x_ker = x_ker/np.std(x_ker)
     ons,offs = spt.levelCrossings(x_ker,thr=thr)
     #print(ons,offs)
-    epLens = np.array([off-on for on, off in zip(ons,offs)]) 
-    
+    epLens = np.array([off-on for on, off in zip(ons,offs)])
+
     #--- Discard brief excursions that are unlikely to be swims
     tooShortInds = np.where(epLens < ker_len/2)[0]
     ons = np.delete(ons,tooShortInds)
     offs = np.delete(offs,tooShortInds)
-    
+
     dx_ker = np.gradient(x_ker)
     dx_ker = dx_ker/np.std(dx_ker)
     ddx_ker = np.gradient(dx_ker)
     ddx_ker = ddx_ker/np.std(ddx_ker)
     pks_up = spt.findPeaks(ddx_ker, pol=1)[0]
-    pks_down = spt.findPeaks(ddx_ker, pol = -1)[0]  
-    
+    pks_down = spt.findPeaks(ddx_ker, pol = -1)[0]
+
     if (np.size(ons)==1) & (np.size(offs)==0):
         #print('No offsets, setting to signal end.')
         offs = [len(x)-1]
     elif (np.size(ons)==0) & (np.size(offs)==1):
         #print('No onsets, setting to singal start.')
-        ons = [0]    
-    ons_new, offs_new, signs = [],[],[]  
-    for on, off in zip(ons, offs):       
+        ons = [0]
+    ons_new, offs_new, signs = [],[],[]
+    for on, off in zip(ons, offs):
         if np.size(off)==0:
             off = len(x)
         elif np.size(on)==0:
             on = 0
-            
-        pks_before = pks_up[np.where(pks_up<=on)[0]]        
-        if np.size(pks_before)==0:           
+
+        pks_before = pks_up[np.where(pks_up<=on)[0]]
+        if np.size(pks_before)==0:
             ons_new.append(on)
         else:
             ons_new.append(pks_before[-1])
-        
-        pks_after = pks_down[np.where(pks_down>=off)[0]]        
-        if np.size(pks_after)==0:           
+
+        pks_after = pks_down[np.where(pks_down>=off)[0]]
+        if np.size(pks_after)==0:
             offs_new.append(off)
         else:
             offs_new.append(pks_after[0])
         signs.append(np.sign(np.gradient(x)[on]))
-    
+
     if plotBool:
         plt.plot(x/np.std(x), label = 'Original')
-        plt.plot(x_ker, alpha = 0.2, label = 'Convolved')           
+        plt.plot(x_ker, alpha = 0.2, label = 'Convolved')
         for on in ons_new:
             plt.axvline(x = on, color = 'g', linestyle = ':', label = 'Onset', alpha = 0.5)
         for off in offs_new:
             plt.axvline(x = off, color = 'r', linestyle = ':', label = 'Offset', alpha = 0.5)
         plt.legend()
-    return np.array(ons_new), np.array(offs_new), np.array(signs)    
+    return np.array(ons_new), np.array(offs_new), np.array(signs)
 
 class track():
     import apCode.volTools as volt
@@ -1908,17 +1911,17 @@ class track():
         """
         import numpy as np
         import apCode.FileTools as ft
-        curve_trl = ft.sublistsFromList(curve.T, nFramesInTrl)        
+        curve_trl = ft.sublistsFromList(curve.T, nFramesInTrl)
         r =[]
         for c in curve_trl:
             if responseWin == None:
                 c_flat = np.array(c).T.flatten()
             else:
-                c_flat = np.array(c).T.flatten()[np.arange(responseWin[0], responseWin[-1])]            
+                c_flat = np.array(c).T.flatten()[np.arange(responseWin[0], responseWin[-1])]
             r.append(np.corrcoef(c_flat[:-1],c_flat[1:])[0,1])
         return np.array(r)
-            
-    def computeBackground(imgDir,n = 1000, ext= 'bmp', n_jobs = 32, verbose = 0, 
+
+    def computeBackground(imgDir,n = 1000, ext= 'bmp', n_jobs = 32, verbose = 0,
                       override_and_save = True):
         """
         Given the path to an image directory, reads uniformly spaced images and returns
@@ -1952,26 +1955,26 @@ class track():
         procDir = os.path.join(imgDir,'proc')
         if not os.path.exists(procDir):
             os.mkdir(procDir)
-    
+
         possible_backgrounds = ft.findAndSortFilesInDir(procDir,
                                                         search_str = 'background', ext = ext)
         if (np.size(possible_backgrounds) == 0) | override_and_save:
             imgNames = ft.findAndSortFilesInDir(imgDir, ext = ext)
             n = np.min((n,len(imgNames))) # Number of images to use to compute background
-            imgPaths = list(map(lambda x: os.path.join(imgDir,x), 
-                                imgNames[np.unique(np.linspace(0,len(imgNames)-1,n).astype(int))]))    
+            imgPaths = list(map(lambda x: os.path.join(imgDir,x),
+                                imgNames[np.unique(np.linspace(0,len(imgNames)-1,n).astype(int))]))
             if n_jobs >1:
                 foo = Parallel(n_jobs = n_jobs, verbose = verbose)(delayed(imread)(ip) for ip in imgPaths)
             else:
                 foo  = [imread(ip) for ip in imgPaths]
             img_back = np.array(foo).mean(axis = 0)
-            imsave(os.path.join(procDir,'background.bmp'),img_back.astype('uint8'))        
-        else:            
+            imsave(os.path.join(procDir,'background.bmp'),img_back.astype('uint8'))
+        else:
             img_back = imread(os.path.join(procDir,possible_backgrounds[0]))
 #            print('Read preexisting background image')
-#            imsave(os.path.join(procDir,'background.bmp'),img_back.astype('uint8'))            
+#            imsave(os.path.join(procDir,'background.bmp'),img_back.astype('uint8'))
         return img_back
-    
+
     def cropImgsAroundFish_old(I,fishPos, cropSize = 75, reshape = False):
         '''
         Crops an image stack around fish position coordinates
@@ -1990,7 +1993,7 @@ class track():
         -------
         I_crop: 3D array, shape = (T,cropSize,cropSize)
             Cropped image stack
-    
+
         '''
         import numpy as np
         fishPos = np.fliplr(fishPos)
@@ -2010,7 +2013,7 @@ class track():
             img = np.array(I[imgNum])
             I_crop.append(img[x0:x1,y0:y1])
         return I_crop
-    
+
     def cropImgsAroundFish(I,fishPos,cropSize = 80,keepSize = True,
                            n_jobs = 32, verbose = 0, pad_type = 'nan'):
         """
@@ -2019,12 +2022,12 @@ class track():
         import apCode.volTools as volt
         import importlib
         importlib.reload(volt)
-        
-        out = volt.img.cropImgsAroundPoints(I,fishPos,cropSize = cropSize, 
-                                       keepSize = keepSize, n_jobs = n_jobs, 
-                                       verbose = verbose, pad_type = pad_type)    
+
+        out = volt.img.cropImgsAroundPoints(I,fishPos,cropSize = cropSize,
+                                       keepSize = keepSize, n_jobs = n_jobs,
+                                       verbose = verbose, pad_type = pad_type)
         return out
-    
+
     def curvaturesAlongMidline(midlines, n = 50, n_jobs = 32, verbose = 0):
         """
         Returns curvatures along the midlines
@@ -2032,23 +2035,23 @@ class track():
         ----------
         midlines: list, (N,)
             Midlines rostrocaudally bisecting the tail of the fish.
-            Each element of the list has dimensions (K,2), where K is a variable 
+            Each element of the list has dimensions (K,2), where K is a variable
             number representing the number of points making up the midline
         n: scalar
             Number of points after cubic spline interpolation. If n = None, then no interpolation
         n_jobs, verbose: See Parallel and delayed from joblib
         """
-        from apCode.geom import dCurve, interpolate_curve        
-        import numpy as np      
-        from joblib import Parallel, delayed          
+        from apCode.geom import dCurve, interpolate_curve
+        import numpy as np
+        from joblib import Parallel, delayed
         if (np.ndim(midlines)!=1) & isinstance(midlines,list):
             midlines = [midlines]
         len_midlines = np.array([len(ml) for ml in midlines])
-        inds_long = np.where(len_midlines >4)[0]           
+        inds_long = np.where(len_midlines >4)[0]
         if n!=None:
             K = np.zeros((n,len(midlines)))*np.nan
             midlines = Parallel(n_jobs = n_jobs, verbose = verbose)\
-            (delayed(interpolate_curve)(ml,n = n ) for ml in midlines[inds_long])                                            
+            (delayed(interpolate_curve)(ml,n = n ) for ml in midlines[inds_long])
             kappas = Parallel(n_jobs= n_jobs, verbose = verbose)\
             (delayed(dCurve)(ml) for ml in midlines)
             kappas = np.array(kappas).T
@@ -2059,9 +2062,9 @@ class track():
                               for ml in midlines[inds_long])
             K = np.array([[np.nan]]*len_midlines)
             K[inds_long] = kappas
-            kappas = K                                 
-        return kappas       
-        
+            kappas = K
+        return kappas
+
     def findFish(imgOrPath, back_img = None, r = 10, n_iter = 2):
         """
         Returns x,y coordinates in an image of a fish's head centroid.
@@ -2081,14 +2084,14 @@ class track():
         Returns
         -------
         fp: array-like, (2,)
-            x-y coordinates (x,y) of fish's head centroid in image.    
-    
+            x-y coordinates (x,y) of fish's head centroid in image.
+
         """
         import numpy as np
         import os
         from skimage.io import imread
         from apCode.geom import circularAreaAroundPoint
-        
+
         def ff(img,seed,r):
             if np.any(seed == None):
                 seed = np.unravel_index(np.argmax(img), img.shape)
@@ -2101,8 +2104,8 @@ class track():
                 return np.ones((2,))*np.nan
             else:
                 wts = wts/wts.sum()
-                return np.dot(coords_around,wts)            
-    
+                return np.dot(coords_around,wts)
+
         if isinstance(imgOrPath,str):
             if os.path.isfile(imgOrPath):
                 img= imread(imgOrPath)
@@ -2111,25 +2114,25 @@ class track():
                 return
         else:
             img = imgOrPath
-            
+
         if not back_img is None:
             img = back_img - img # Subtraction order makes fish pixels brighter than background
-            
+
         fp = None
-        for n in range(n_iter):            
+        for n in range(n_iter):
             fp = ff(img,fp,r)
         return np.flipud(fp)
-        
+
     def fishImgsForBarycentricMidlines(I,I_prob, p_cutoff = 0.95, n_jobs = 32, verbose = 0):
         """
         When given raw fish images and probability images predicted by a trained U-net,
         returns images with single blobs that likely correspond to fish pixels.
-        These images can then be used for midline estimation using the circular 
+        These images can then be used for midline estimation using the circular
         barycentric method (i.e., track.midlinesUsingBarycenters).
         """
         import numpy as np
         from apCode.behavior.FreeSwimBehavior import track
-        
+
         def fishImgForBarycentricMidline(img, img_prob, p_cutoff):
             img_prob[img_prob < p_cutoff] = 0
             img = -img*img_prob
@@ -2143,14 +2146,14 @@ class track():
             else:
                 from joblib import Parallel, delayed
                 I_fish = Parallel(n_jobs = n_jobs, verbose = verbose)
-                (delayed(fishImgForBarycentricMidline)(img, img_prob, p_cutoff) 
+                (delayed(fishImgForBarycentricMidline)(img, img_prob, p_cutoff)
                 for img, img_prob in zip(I, I_prob))
         return np.array(I_fish)
-    
-    def fishImgsForMidline(I_raw, I_prob, filt_size=1, crop_size = None, n_jobs = 32, 
+
+    def fishImgsForMidline(I_raw, I_prob, filt_size=1, crop_size = None, n_jobs = 32,
                            verbose = 0, nThr = None, method = 'otsu'):
         """
-        Given raw and probability images returned by U_net, returns images that are ready to 
+        Given raw and probability images returned by U_net, returns images that are ready to
         use for midline estimation
         Parameters
         ----------
@@ -2168,7 +2171,7 @@ class track():
         n_jobs, verbose: see Parallel, delayed
         method: string, 'custom' or 'otsu' (default)
             Algorithm for determining fish blob
-        
+
         Returns
         -------
         I_fish: array, ([T,], crop_size, crop_size)
@@ -2181,38 +2184,38 @@ class track():
         from skimage.morphology import erosion
         from apCode.behavior.FreeSwimBehavior import track
         from apCode.volTools import img as img_
-    
+
         def fishImgForMidline(img_raw, img_prob, filt_size, crop_size, method):
             if method == 'custom':
                 img_prob[img_prob<0.95]= 0
             elif method == 'otsu':
                 img_prob = img_.otsu(img_prob, mult = 0.2)
-                                    
+
             img = erosion(standardize(-img_raw)*img_prob)
             if img.sum()==0:
                 return img,np.ones(2,)*np.nan
             mask = (img>0).astype(int)
-            img = gaussian(img,filt_size)*mask                      
-            fp = track.findFish(img, r = 20)           
-            if not crop_size == None:            
+            img = gaussian(img,filt_size)*mask
+            fp = track.findFish(img, r = 20)
+            if not crop_size == None:
                 img = track.cropImgsAroundFish(img, fp, cropSize = crop_size)
             if np.sum(img)!=0:
-                img = track.guess_fish_blob(img)*img          
+                img = track.guess_fish_blob(img)*img
             return img, fp
-    
+
         if np.ndim(I_raw)==2:
             return fishImgForMidline(I_raw, I_prob, filt_size, crop_size)
         else:
             if (n_jobs > 1) & (n_jobs < I_raw.shape[0]):
                 from joblib import Parallel, delayed
                 I_fish, fp = zip(*Parallel(n_jobs=n_jobs, verbose=verbose)(delayed(fishImgForMidline)
-                (img_raw,img_prob,filt_size,crop_size, method) 
+                (img_raw,img_prob,filt_size,crop_size, method)
                 for img_raw, img_prob in zip(I_raw, I_prob)))
             else:
-                I_fish, fp = zip(*[fishImgForMidline(img_raw, img_prob, filt_size, crop_size, method) 
-                for img_raw, img_prob in zip(I_raw, I_prob)])           
+                I_fish, fp = zip(*[fishImgForMidline(img_raw, img_prob, filt_size, crop_size, method)
+                for img_raw, img_prob in zip(I_raw, I_prob)])
             return np.array(I_fish), np.array(fp)
-        
+
     def guess_fish_blob(img_prob, approx_fishLen = 100):
         """
         In a probability image (img_prob*-img) that consists of distinct islands,
@@ -2221,7 +2224,7 @@ class track():
         Parameters
         ----------
         img_prob: array, (m,n)
-            Probability image, or img_prob*img, where img is intensity image        
+            Probability image, or img_prob*img, where img is intensity image
         approx_fishLen:scalar
             Approximate fish length in pixel units. In my imaging conditions, approx
             pixel length = 0.05, and approx fish length = 5mm, so approx fish length
@@ -2233,7 +2236,7 @@ class track():
         from skimage.morphology import thin
         import apCode.geom as geom
         from scipy.stats import rankdata
-    
+
         def normalized_midline_profile_slope(img):
             ml = np.array(np.where(thin(img))).T
             try:
@@ -2246,25 +2249,25 @@ class track():
             res = np.mean(np.sum((c_fit-c)**2,axis = 1)**0.5)
             m_norm = mb[0]/res
             return np.abs(m_norm)
-    
+
         def midline_len(img):
             ml = np.array(np.where(thin(img))).T
             ml_ord = ml[geom.sortPointsByDist(ml),:]
-            return np.sum(np.sum(np.diff(ml_ord,axis = 0)**2,axis = 1)**0.5)        
-        
+            return np.sum(np.sum(np.diff(ml_ord,axis = 0)**2,axis = 1)**0.5)
+
         img_prob[np.where(np.isnan(img_prob))]=0
         img_bool = img_prob*0
         img_bool[np.where(img_prob>0)]=1
         rp = regionprops(label(img_bool),img_bool*img_prob)
-        
+
         ### Remove small regions
         if len(rp)>1:
             delInds = np.zeros((len(rp),)).astype(int)
             for count, rp_ in enumerate(rp):
                 if len(rp_.coords)<=6:
                     delInds[count] = 1
-            rp = np.delete(rp, np.where(delInds)[0])                
-    
+            rp = np.delete(rp, np.where(delInds)[0])
+
         if len(rp)==1:
             temp = img_bool*0
             temp[rp[0].coords[:,0], rp[0].coords[:,1]] = 1
@@ -2276,21 +2279,21 @@ class track():
                 #normSlope = np.array([normalized_midline_profile_slope(rp_.intensity_image) for rp_ in rp])
                 midlineLen = np.array([midline_len(rp_.image) for rp_ in rp])
                 len_similarity = 1-(np.abs(approx_fishLen-midlineLen)/approx_fishLen)
-                ranks = np.array(0.8*[rankdata(maxInt), 0.2*rankdata(len_similarity)])                
+                ranks = np.array(0.8*[rankdata(maxInt), 0.2*rankdata(len_similarity)])
                 blob_ind = np.argmax(ranks.sum(axis=0))
             except:
-                maxInt = np.array([rp_.max_intensity for rp_ in rp])                
-                blob_ind =  np.argmax(maxInt)             
-            temp = img_bool*0            
+                maxInt = np.array([rp_.max_intensity for rp_ in rp])
+                blob_ind =  np.argmax(maxInt)
+            temp = img_bool*0
             temp[rp[blob_ind].coords[:,0], rp[blob_ind].coords[:,1]] = 1
             return temp.astype('uint8')
         else:
             print('No blobs in image')
             return img_bool.astype('uint8')
-    
+
     def interpolateMidlines(midlines, q = 90, kind:str = 'cubic', N:int = 100):
         """
-        When given midlines returned by FreeSwimBehavior.track.midlinesFromImages, returns an array of 
+        When given midlines returned by FreeSwimBehavior.track.midlinesFromImages, returns an array of
         midlines adjusted for the most common length and interpolated to fill NaNs
         Parameters
         ----------
@@ -2301,30 +2304,30 @@ class track():
             Kind of interpolation to use; see scipy.interpolate.interp1d
         fill_value: float, None (default), or "extrapolate"
             Values to fill with when outside the convex hull of the interpolation
-            
+
         Returns
         -------
         midlines_interp, midlines_extrap: arrays,  (T, N, 2)
             Interpolated array of midlines (midlines_interp) and length-adjusted (by extrapolation)
             array of midlines respectively
-            
+
         """
         import numpy as np
         from scipy.interpolate import griddata
         from apCode.geom import interpExtrapCurves
-        
+
         def interp2D(C,kind):
             coords = np.where(np.isnan(C)==False)
-            gy, gx = np.meshgrid(np.arange(C.shape[1]), np.arange(C.shape[0]))   
+            gy, gx = np.meshgrid(np.arange(C.shape[1]), np.arange(C.shape[0]))
             C_interp = griddata(coords, C[coords],(gx, gy), method = kind)
             return C_interp
         M =interpExtrapCurves(midlines,q = q, kind = kind, N = N)
-        M_interp= np.apply_along_axis(interp2D,1,M,kind)   
-        return M_interp  
-    
+        M_interp= np.apply_along_axis(interp2D,1,M,kind)
+        return M_interp
+
     def interpolateMidlines_old(midlines, n_jobs = 32, verbose = 0, kind = 'cubic', fill_value = None):
         """
-        When given midlines returned by FreeSwimBehavior.track.midlinesFromImages, returns an array of 
+        When given midlines returned by FreeSwimBehavior.track.midlinesFromImages, returns an array of
         midlines adjusted for the most common length and interpolated to fill NaNs
         Parameters
         ----------
@@ -2335,19 +2338,19 @@ class track():
             Kind of interpolation to use; see scipy.interpolate.interp1d
         fill_value: float, None (default), or "extrapolate"
             Values to fill with when outside the convex hull of the interpolation
-            
+
         Returns
         -------
         midlines_interp, midlines_extrap: arrays,  (T, N, 2)
             Interpolated array of midlines (midlines_interp) and length-adjusted (by extrapolation)
             array of midlines respectively
-            
+
         """
         import numpy as np
-        from scipy.interpolate import interp1d, griddata    
+        from scipy.interpolate import interp1d, griddata
         from joblib import Parallel, delayed
         from apCode.SignalProcessingTools import stats
-        
+
         ### Custom functions
         dists = lambda ml: np.insert(np.cumsum(np.sum(np.diff(ml,axis = 0)**2,axis = 1)**0.5),0,0)
         interp_fit = lambda dml, ml, x, kind, bounds_error, axis, fill_value: interp1d(dml,ml,kind = kind, bounds_error = bounds_error, axis = axis, fill_value = fill_value)(x)
@@ -2356,13 +2359,13 @@ class track():
         bounds_error, axis = False, 0
         if fill_value == None:
             fill_value = np.nan
-    
+
         dMidlines = np.array(Parallel(n_jobs= n_jobs, verbose =0)(delayed(dists)(ml) for ml in midlines))
         midLens, dMids= zip(*[(_[-1], np.mean(np.diff(_))) for _ in dMidlines])
         midLens, dMids = np.array(midLens), np.array(dMids)
         x_50 = stats.valAtCumProb(midLens, func = 'lin', cumProb = 0.5, plotBool = False)
         x = np.arange(0, x_50, np.min(dMids))
-#        print('Midlines: mean length = {}, length for 50 % = {}'.format(np.mean(midLens), x_50))        
+#        print('Midlines: mean length = {}, length for 50 % = {}'.format(np.mean(midLens), x_50))
         M_extrap = np.array(Parallel(n_jobs = n_jobs, verbose = verbose)\
                          (delayed(interp_fit)(dml,ml,x,kind,bounds_error, axis, fill_value)\
                           for dml, ml in zip(dMidlines, midlines)))
@@ -2374,16 +2377,16 @@ class track():
 #        print("{}/{} midlines interpolated".format(len(midlines)-len(inds_keep), len(midlines)))
         M_bool = X*0
         M_bool[inds_keep,...] = 1
-        coords = np.where(M_bool==1)        
+        coords = np.where(M_bool==1)
         X_interp = griddata(coords, X[coords],(gx, gy), method = kind)
         Y_interp = griddata(coords, Y[coords],(gx, gy), method = kind)
         M = M_extrap*0
         M[...,0] = X_interp
         M[...,1] = Y_interp
         inds_nan = np.where(np.isnan(M))
-        M[inds_nan] = M_extrap[inds_nan] 
-        return M, M_extrap    
-    
+        M[inds_nan] = M_extrap[inds_nan]
+        return M, M_extrap
+
     def midlinesFromImages(images, smooth = 20, n = 50, n_jobs = 32, verbose = 0, orientMidlines = True):
         """
         Returns midlines from fish images generated by fishImgsForMidline
@@ -2399,46 +2402,46 @@ class track():
         Returns
         -------
         midlines: array, ([T], n, 2)
-            Array of midlines with the same number of points in each midline because 
+            Array of midlines with the same number of points in each midline because
             of smoothing and interpolation
         ml_dist: tuple, (2,)
             First element is raw, pruned, and sorted midlines
-            Second element is cumulative sum of distances (in pixel lengths) between 
+            Second element is cumulative sum of distances (in pixel lengths) between
             successive midline points
         """
         from skimage.morphology import thin
         import apCode.geom as geom
         import numpy as np
         from apCode.geom import smoothen_curve
-        
+
         getDists = lambda point, points: np.sum((point.reshape(1,-1)-points)**2,axis = 1)**0.5
-        
+
         def identifyPointTypesOnMidline(ml):
-            dist_adj = np.sqrt(2)+0.01    
+            dist_adj = np.sqrt(2)+0.01
             L = np.array([len(np.where(getDists(ml_,ml) < dist_adj)[0]) for ml_ in ml])
             endInds = np.where(L==2)[0].astype(int)
             branchInds = np.where(L==4)[0].astype(int)
             middleInds = np.where(L==3)[0].astype(int)
             return middleInds, endInds, branchInds
-        
+
         def midlineFromImg(img,smooth,n):
-            ml = np.array(np.where(thin(img))).T  
-            inds_mid, inds_end, inds_branch = identifyPointTypesOnMidline(ml)                
-            ml = np.delete(ml,inds_branch,axis = 0)           
+            ml = np.array(np.where(thin(img))).T
+            inds_mid, inds_end, inds_branch = identifyPointTypesOnMidline(ml)
+            ml = np.delete(ml,inds_branch,axis = 0)
             if len(ml)<3:
                 return ml,(ml,[])
             inds_mid, inds_end, inds_branch = identifyPointTypesOnMidline(ml)
             wts = img[ml[:,1], ml[:,0]]
-            ind_brightest = np.argmax(wts)            
+            ind_brightest = np.argmax(wts)
             if len(inds_end) ==0:
                 ind_start = ind_brightest
             else:
-                ind_start = inds_end[np.argmin(getDists(ml[ind_brightest,:], ml[inds_end,:]))]            
+                ind_start = inds_end[np.argmin(getDists(ml[ind_brightest,:], ml[inds_end,:]))]
             ord_sort = geom.sortPointsByWalking(ml, ref = ml[ind_start,:])
-            ml_sort = ml[ord_sort,:]                                   
+            ml_sort = ml[ord_sort,:]
             d = np.sum(np.diff(ml_sort,axis =0)**2,axis = 1)**0.5
             jumpInd = np.where(d>2*(np.sqrt(2)+0.01))[0]
-            if len(jumpInd)>0:                
+            if len(jumpInd)>0:
                 jumpInd = jumpInd[np.argmax(d[jumpInd])]
                 len_pre = len(ml_sort[:jumpInd])
                 len_post =len(ml_sort[(jumpInd+1):])
@@ -2457,43 +2460,43 @@ class track():
                 d = np.flipud(d)
             d = np.cumsum(np.insert(d,0,0))
             ml_sort = np.fliplr(ml_sort)
-            ml_dist = (ml_sort, d)           
-            if len(ml_sort)>4:               
+            ml_dist = (ml_sort, d)
+            if len(ml_sort)>4:
                 ml_smooth = smoothen_curve(ml_sort,smooth = smooth)
             else:
-                ml_smooth = ml_sort                                   
+                ml_smooth = ml_sort
             return ml_smooth, ml_dist
-        
+
         def orientMidlines_(midlines):
             inds = np.arange(1,len(midlines))
             count = 0
-            midlines_adj = midlines.copy()            
-            for ind in inds:        
+            midlines_adj = midlines.copy()
+            for ind in inds:
                 d = np.sum((midlines_adj[0][0]-midlines_adj[ind][0])**2)
                 d_flip = np.sum((midlines_adj[0][0]-np.flipud(midlines_adj[ind])[0])**2)
                 if d> d_flip:
                     count = count + 1
                     midlines_adj[ind] = np.flipud(midlines_adj[ind])
-            
+
             #print('{} midlines flipped'.format(count))
-            return midlines_adj 
-        
+            return midlines_adj
+
         if np.ndim(images) == 2:
             midlines, ml_dist = midlineFromImg(images,smooth,n)
-        else:  
+        else:
             if (n_jobs >1) & (n_jobs >= images.shape[0]):
                 from joblib import Parallel, delayed
                 midlines, ml_dist = zip(*Parallel(n_jobs = n_jobs, verbose = verbose)
                 (delayed(midlineFromImg)(img, smooth,n) for img in images))
-            else:                
+            else:
                 midlines, ml_dist = zip(*[midlineFromImg(img, smooth, n) for img in images])
         midlines = np.array(midlines)
         if orientMidlines:
             midlines = orientMidlines_(midlines)
-        return midlines, ml_dist       
-    
-        
-    def midlinesUsingBarycenters(images, r = 4, nCircles = 6, avoid_angle = 100, smooth =2, 
+        return midlines, ml_dist
+
+
+    def midlinesUsingBarycenters(images, r = 4, nCircles = 6, avoid_angle = 100, smooth =2,
                                  n_jobs = 32, verbose = 0):
         """
         Fish midlines using barycenter approach described by Adrien Jouary and German Sumbre.
@@ -2511,24 +2514,24 @@ class track():
         ----------
         midlines: array, ([T,],nCircles+2,2)
             Coordinates of the midlines in each of the images
-        """    
+        """
         import apCode.geom as geom
         import apCode.behavior.FreeSwimBehavior as fsb
         import numpy as np
-        def mlbc(img, r, nCircles):         
+        def mlbc(img, r, nCircles):
             fp = fsb.track.findFish(img, r = r*2, n_iter = 1)
 #            fp = np.flipud(np.unravel_index(np.argmax(img),img.shape))
             bc = np.zeros((nCircles+2,2))
             bc[0] = fp
-            bc[1] = geom.baryCenterAlongCircleInImg(img,fp,r*2, avoid_angle= avoid_angle)[0] 
+            bc[1] = geom.baryCenterAlongCircleInImg(img,fp,r*2, avoid_angle= avoid_angle)[0]
             for r_ in range(2,nCircles+2):
                 if np.any(np.isnan(bc[r_-1])):
                     bc[r_:,:] = np.nan
                     return bc
                 else:
-                    bc[r_] = geom.baryCenterAlongCircleInImg(img, bc[r_-1], r, ctr_prev= bc[r_-2], avoid_angle= avoid_angle)[0]                    
+                    bc[r_] = geom.baryCenterAlongCircleInImg(img, bc[r_-1], r, ctr_prev= bc[r_-2], avoid_angle= avoid_angle)[0]
             return bc
-    
+
         if np.ndim(images)==2:
             return mlbc(images,r,nCircles)
         else:
@@ -2539,7 +2542,7 @@ class track():
                 midlines = Parallel(n_jobs = n_jobs, verbose=verbose)(delayed(mlbc)(img, r, nCircles) for img in images)
             midlines= np.array(midlines)
             return midlines
-        
+
     def subtractBackground(I,method = 'mean',imgInds = None, wts = None):
         """
         Returns the background subtracted image stack
@@ -2559,7 +2562,7 @@ class track():
         ------
         I_back: 3D array of same shape as I
             Image stack with background removed
-        
+
         """
         import numpy as np
         from scipy.stats import mode
@@ -2569,15 +2572,14 @@ class track():
         if wts != None:
             wts = wts/np.sum(wts)
             wts = wts.reshape((-1,1,1))
-            I = np.multiply(I,wts)    
+            I = np.multiply(I,wts)
         img_back = I[0]*0
         if method.lower() == 'mean':
             img_back = np.mean(I,axis = 0)
         elif method.lower() == 'median':
             img_back = np.median(I,axis = 0)
         elif method.lower() == 'mode':
-            img_back = np.squeeze(mode(I,axis =0)[0])                  
+            img_back = np.squeeze(mode(I,axis =0)[0])
         else:
             print('Method not specified properly. Please check!')
         return I_orig-img_back,img_back
-        

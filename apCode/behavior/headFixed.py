@@ -180,6 +180,38 @@ def copyFishImgsForNNTraining(exptDir, prefFrameRangeInTrl=(115, 160),
     return files_sel, dst
 
 
+def correlate_images_to_ref(images, ref=None):
+    """Correlations across time for each slice of an image stack
+    with the temporal mean of that slice.
+    Parameters
+    ----------
+    images: array, (nTimePoints, nSlices, nRows, nCols)
+        Image stack
+    ref: array, (nSlices, nRows, nCols) or None
+        Reference volume for computing means. If None, then computes
+        the temporal mean and uses this as reference.
+    Returns
+    -------
+    corrs: array, (nSlices, nTimePoints)
+        Correlations across time of each of the slices against the
+        temporal mean
+    """
+
+    def corr_images(img1, img2):
+        return np.corrcoef(img1.flatten(), img2.flatten())[0, 1]
+
+    if ref is None:
+        ref = images.mean(axis=0)
+    images_swap = np.swapaxes(images, 0, 1)
+    corrs = []
+    for iSlc, slc in enumerate(images_swap):
+        print(f'Slice {iSlc+1}/{images_swap.shape[0]}')
+        c = [dask.delayed(corr_images)(slc_, ref[iSlc]) for slc_ in slc]
+        c = np.array(dask.compute(*c, scheduler='processes'))
+        corrs.append(c)
+    return np.array(corrs)
+
+
 def deletion_inds_for_stimLoc(stimLoc_behav, stimLoc_ca):
     """
     Looks at mismatch in stimulus location vectors
@@ -1821,8 +1853,9 @@ def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', c
         with ProgressBar():
             I = dask.compute(*I)
 
-    D = dict(I=np.squeeze(np.array(I)), tifInfo=tifInfo, inds_stim=inds_stim, inds_stim_img=inds_stim_img,
-             inds_camTrig=inds_camTrig, bas=bas, inds_trl_excluded=inds_trl_del)
+    D = dict(I=np.squeeze(np.array(I)), tifInfo=tifInfo, inds_stim=inds_stim,
+             inds_stim_img=inds_stim_img, inds_camTrig=inds_camTrig, bas=bas,
+             inds_trl_excluded=inds_trl_del)
     return D
 
 
@@ -1933,7 +1966,8 @@ def readPeriStimulusTifImages_volumetric(tifDir, basPath, nBasCh=16, ch_camTrig=
     n_post = int(np.round(time_postStim/dt_ca))
     print(f'{n_pre} pre stim images, {n_post} post-stim images')
     with ProgressBar():
-        images_trl = compute(*spt.segmentByEvents(images, inds_stim_ca, n_pre, n_post))
+        images_trl = compute(*spt.segmentByEvents(images, inds_stim_ca, n_pre,
+                                                  n_post))
     nImgs = np.array([img.shape[0] for img in images_trl])
     inds_del = np.where(nImgs < mode(nImgs)[0])
     images_trl = np.delete(images_trl, inds_del, axis=0)
@@ -2159,7 +2193,8 @@ def registerTrializedImgStack(I, iCh_ref=0, nImgs_ref=40, filtSigma=3, filtMode=
     return I_reg, regObj
 
 
-def register_trialized_volumes_by_slices(images, filtSize=1, regMethod='cpwr', **kwargs):
+def register_trialized_volumes_by_slices(images, filtSize=1, regMethod='cpwr',
+                                         **kwargs):
     """
     Register image volumes slice-by-slice
     Parameters
@@ -2167,9 +2202,9 @@ def register_trialized_volumes_by_slices(images, filtSize=1, regMethod='cpwr', *
     images: array, (nTrials, nTimePoints, nSlices, nRows, nCols)
         Image hyperstack to perform registration on.
     filtSize: scalar
-        Gaussian filter size (sigma) for smoothing of images prior to registration. The
-        smoothing is only done to compute registration parameters, which are then applied
-        to raw images.
+        Gaussian filter size (sigma) for smoothing of images prior to
+        registration. The smoothing is only done to compute registration
+        parameters, which are then applied to raw images.
     regMethod: str
         Method of registration to use.
         'cr': Caiman's rigid
@@ -2258,6 +2293,96 @@ def register_volumes_by_slices_and_trials(images, regMethod='cpwr',
     return images_reg, regObj
 
 
+class RegressionBySlice(object):
+    """Slice-by-slice regression of image pixels with a set of
+    commmon and slice-specific regressors (such as motion artifacts)
+    """
+
+    def __init__(self, reg_common, reg_slice, **kwargs):
+        """
+        Parameters
+        ----------
+        reg_common: array, (nSamples, nFeatures)
+            Common regressors
+        reg_slice: array, (nSlices, nSamples[, nFeatures])
+            Slice-specific regressors
+        **kwargs: see apCode.imageAnalysis.spim.regress
+        """
+        from apCode.imageAnalysis.spim import regress
+        self.X_com_ = reg_common
+        self.X_slc_ = reg_slice
+        self.params_ = kwargs
+        self._regress = regress
+
+    def _to_imgDims(self, y):
+        if np.ndim(y) < 2:
+            y = y[:, np.newaxis]
+        nReg = y.shape[1]
+        return y.T.reshape(nReg, *self.imgDims_)
+
+    def _results_to_imgDims(self, reg):
+        reg_new = []
+        for reg_ in reg:
+            reg_.coef_ = self._to_imgDims(reg_.coef_)
+            reg_.se_ = self._to_imgDims(reg_.se_)
+            reg_.T_ = self._to_imgDims(reg_.T_)
+            reg_.intercept_ = self._to_imgDims(reg_.intercept_)
+            reg_new.append(reg_)
+        return reg_new
+
+    def fit(self, images):
+        """
+        Parameters
+        ----------
+        images: array, (nSamples, nSlices, *imgDims)
+            Image stack
+        Returns
+        -------
+        reg: list, (nSlices,)
+            List of regression objects from each slice
+
+        """
+        self.imgDims_ = images.shape[-2:]
+        nSlices = images.shape[1]
+        nSamples = images.shape[0]
+        Y = np.swapaxes(images, 0, 1).reshape(nSlices, nSamples, -1)
+        reg = []
+        for iSlc, slc in enumerate(Y):
+            print(f'Slice {iSlc+1}/{nSlices}')
+            X = np.c_[self.X_com_, self.X_slc_[:, iSlc]]
+            reg.append(dask.delayed(self._regress)(X, slc, **self.params_))
+        reg = dask.compute(*reg)
+        self.reg = self._results_to_imgDims(reg)
+        return self
+
+    def get_volumes(self):
+        """
+        Returns volumes of coefficients, se, and t-Values
+        organized by features
+        Returns
+        -------
+        results: dict
+            coef: array, (nFeatures, nSlices, *imgDims)
+                Regression coefficients
+            se: array, coef.shape
+                Standard error of the coefficient
+            tVals: array, coef.shape
+                T values
+        """
+        coef, se, tVals = [], [], []
+        intercept = []
+        for reg_ in self.reg:
+            coef.append(reg_.coef_)
+            se.append(reg_.se_)
+            tVals.append(reg_.T_)
+            intercept.append(reg_.intercept_)
+        coef = np.swapaxes(np.array(coef), 0, 1)
+        se = np.swapaxes(np.array(se), 0, 1)
+        tVals = np.swapaxes(np.array(tVals), 0, 1)
+        results = dict(coef=coef, se=se, tVals=tVals, intercept=intercept)
+        return results
+
+
 def roiTimeseriesAsMat(hFile, subtractBack=True):
     """
     Read ROI timeseries from HDF file (roiTimeseriesFromImagesInHDF
@@ -2269,8 +2394,8 @@ def roiTimeseriesAsMat(hFile, subtractBack=True):
         If True, and 'background' ROI exists, subtract this value
         from all the other ROIs
     nWaves: int
-        If nWaves > 0, then denoises signals with wavelet denoising (apCode.spectral.Wden.wden)
-        by setting the parameter n = nWaves
+        If nWaves > 0, then denoises signals with wavelet denoising
+        (apCode.spectral.Wden.wden) by setting the parameter n = nWaves
     Returns
     -------
     roi_ts: dict
