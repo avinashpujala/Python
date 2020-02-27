@@ -311,16 +311,16 @@ def loadPreTrainedUnet(path_to_unet, search_dir=None, name_prefix='trainedU'):
     return unet
 
 
-class patchifyImgs:
+class PatchifyImgs:
     """
     Class with functions for converting an image stack of grayscale images into
     a 2D matrix useful for machine learning procedures
     Parameters
     ----------
-    patchSize: tuple or list, shape = (2,)
+    patchSize: 2-tuple-like or int
         The dimension of the patches to slide over images and convert into
         feature vectors
-    stride: integer
+    stride: int or 2-tuple-like
         Determines the step size for sliding the window when extracting image
         patches
     n_jobs: integer
@@ -330,6 +330,10 @@ class patchifyImgs:
     """
 
     def __init__(self, patchSize=(50, 50), stride=1, n_jobs=32, verbose=1):
+        if np.ndim(patchSize) < 2:
+            patchSize_ = np.ones((2,), dtype=int)*patchSize
+        if np.ndim(stride) < 2:
+            stride = np.ones((2, ), dtype=int)*stride
         self.patchSize_ = patchSize
         self.stride_ = stride
         self._n_jobs = n_jobs
@@ -342,10 +346,10 @@ class patchifyImgs:
         import numpy as np
         self._imgShape = img.shape
         patchSize = self.patchSize_
-        r = np.arange(0, img.shape[0], self.stride_)
+        r = np.arange(0, img.shape[0], self.stride_[0])
         overInds = np.where((r+patchSize[0]) > img.shape[0])[0]
         r[overInds] = r[overInds]-(r[overInds]+patchSize[0]-img.shape[0])
-        c = np.arange(0, img.shape[1], self.stride_)
+        c = np.arange(0, img.shape[1], self.stride_[1])
         overInds = np.where((c + patchSize[1]) > img.shape[1])[0]
         c[overInds] = c[overInds]-(c[overInds] + patchSize[1]-img.shape[1])
 
@@ -389,17 +393,16 @@ class patchifyImgs:
         return I_patches.reshape(self.nImages_, self.nPatches_,
                                  *self.patchSize_)
 
-    def revert(self, I_patches):
+    def revert(self, I_patches) -> "(nImgs, *imgDims)":
         """
         Converts back from feature vector matrix to image stack
         Parameters
         ---------
-        I_patches: array, (K,D)
-            K is the total number of patches from all the images
-            (nImages*nPatchesPerImage), and D is the dimensionality of the
-            feature vector (patchSize[0]*patchSize[1])
+        I_patches: array, (nImgs*nPatches, patchSize[0]*patchSize[1])
+            Feature array where dimensionality of features is the number of
+            pixels in a patch
         Returns:
-        I: (T,M,N)
+        I: (nImgs, nRows, nCols)
         """
         import numpy as np
         nImgs = int(I_patches.shape[0]/self.nPatches_)
@@ -410,12 +413,21 @@ class patchifyImgs:
                                 in I_patches])
         else:
             from joblib import Parallel, delayed
-            I_recon = Parallel(n_jobs=self._n_jobs, verbose=self._verbose)
-            (delayed(self._col2im)(img_patches) for img_patches in I_patches)
+            del_func = delayed(self._col2im)
+            parallel = Parallel(n_jobs=self._n_jobs, verbose=self._verbose)
+            I_recon = parallel(del_func(ip_) for ip_ in I_patches)
             I_recon = np.array(I_recon)
         return np.squeeze(I_recon)
 
-    def revert_preserve(self, images_patches):
+    def revert_for_nn(self, images_patches) -> "(nImgs, *imgDims)":
+        """
+        Reverses transform_for_nn to give back original images
+        """
+        images = images_patches.reshape(images_patches.shape[0], -1)
+        images = self.revert(images)
+        return images
+
+    def revert_preserve(self, images_patches) -> "(nImgs, nPatches, *patchDims)":
         """
         Reconstructs images from patches
         Parameters
@@ -427,7 +439,7 @@ class patchifyImgs:
         images_patches = images_patches.reshape(m, n)
         return self.revert(images_patches)
 
-    def transform(self, images):
+    def transform(self, images) -> "(nImgs*nPatches, patchDims[0]*patchDims[1])":
         """
         Converts images into a feature matrix of dimensionality corresponding
         to the number of pixels in a patch.
@@ -454,9 +466,9 @@ class patchifyImgs:
             # self, which is required for
             # reversion
             foo = foo*2  # To suppress code suggestion
-            images_patches = Parallel(n_jobs=self._n_jobs,
-                                      verbose=self._verbose)
-            (delayed(self._im2col)(img) for img in images)
+            del_func = delayed(self._im2col)
+            parallel = Parallel(n_jobs = self._n_jobs, verbose = self._verbose)
+            images_patches = parallel(del_func(img) for img in images)
             images_patches = np.array(images_patches)
         self.nPatches_ = images_patches.shape[1]
         self.imgShape_ = images.shape[1:]
@@ -465,17 +477,33 @@ class patchifyImgs:
         images_patches = images_patches.reshape(m, images_patches.shape[2])
         return images_patches
 
-    def transform_preserve(self, I):
+
+    def transform_for_nn(self, images) -> "(nImgs*nPatchs, *patchDims)":
+        """Convert images to patches in a format suitable for inputting to
+        a U net
+        Parameters
+        ----------
+        images: array, (nImgs, *imgDims)
+        Returns
+        -------
+        images_patch: array, (nImgs*nPatches, *patchDims)
         """
-        Converts images into patches without reducing dimensions
+        images_patches = self.transform(images)
+        images_patches = images_patches.reshape(-1, *self.patchSize_)
+        return images_patches
+
+    def transform_preserve(self, images) -> "(nImgs, nPatches, *patchDims)":
+        """
+        Converts images into patches without concatenating patches from
+        different images
         Parameters
         ----------
         I: array, (nImages, imageHeight, imageWidth)
         Returns
         -------
-        I_patches: array, (nImages,nPatches, patchHeight, patchWidth)
+        I_patches: array, (nImages, nPatches, patchHeight, patchWidth)
         """
-        I_patches = self.transform(I)
+        I_patches = self.transform(images)
         return self.reshape_to_img_patches(I_patches)
 
 

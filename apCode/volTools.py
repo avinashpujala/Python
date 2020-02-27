@@ -31,6 +31,7 @@ def angleBetween2DVectors(v1, v2):
 
 
 def animate_images(images, fps=30, display=True, save=False, savePath=None,
+                   path_to_ffmpeg = r'V:\Code\FFMPEG\bin\ffmpeg.exe',
                    **kwargs):
     """
     Movie from an image stack
@@ -56,8 +57,7 @@ def animate_images(images, fps=30, display=True, save=False, savePath=None,
     """
     import matplotlib.pyplot as plt
     from matplotlib import animation
-    plt.rcParams['animation.ffmpeg_path'] =\
-        r'V:\Code\Python\FFMPEG\bin\ffmpeg.exe'
+    plt.rcParams['animation.ffmpeg_path'] = path_to_ffmpeg
     from IPython.display import HTML
     import time
 
@@ -333,6 +333,22 @@ def denoise_wavelet(images, scheduler='threads', **kwargs):
                                 for img in images], scheduler=scheduler)
     images_den = np.array(images_den)
     return np.squeeze(images_den)
+
+
+def filter_bilateral(images, diam=6, sigma_space=1, sigma_color=5000):
+    import cv2
+    if images.dtype != np.float32:
+        images = images.astype(np.float32)
+
+    if sigma_color is None:
+        from apCode.machineLearningnelearning.ml import GMM
+        gmm = GMM(n_components=1).fit(images.flatten()[:, None])
+        sigma_color = gmm.covariances_[0,0]
+    del_func = dask.delayed(cv2.bilateralFilter)
+    images_bil = [del_func(img, diam, sigma_color, sigma_space)
+                  for img in images]
+    images_bil = np.array(dask.compute(*images_bil))
+    return images_bil
 
 
 def getGlobalThr(img, thr0=[], tol=1/500, nIter_max=100):
@@ -1613,6 +1629,8 @@ class Register():
             images = img.gaussFilt(images, sigma=1)
         if ref is None:
             ref = images.mean(axis=0)
+        patchSize, overlaps, max_shifts = None, None, None
+        max_deviation_rigid = None
         if self.regMethod_ == 'st':
             if self.n_jobs_ <= 1:
                 shifts =\
@@ -1727,7 +1745,8 @@ class Register():
         """
         from scipy.ndimage import fourier_shift
         from numpy.fft import fftn, ifftn
-        import caiman as cm
+        if self.regMethod_ in ['cr', 'cpwr']:
+            import caiman as cm
         shifts = self.translation_coords_
         def f(img, s): return np.real(ifftn(fourier_shift(fftn(img), s)))
         if np.ndim(images) < 3:
@@ -1765,6 +1784,70 @@ class Register():
                     print('Please specify valid backend ("joblib" or "dask")')
                     I_shifted = None
         return np.squeeze(np.array(I_shifted))
+
+def register_volumes(static, moving, nBins=32, sampling_prop=None,
+                     level_iters=[100, 50, 2], sigmas=[5.0, 2.0, 0],
+                     factors=[8, 3, 1], params0=None,
+                     static_grid2world=None, moving_grid2world=None,
+                     verbosity=2):
+    """Register two volumes using AffineTransform3D in the dipy package
+    Paramters
+    ---------
+    static: array, (nSlices, nRows, nCols)
+        Reference volume
+    moving: array, (nSlices, nRows, nCols)
+        Volume to register. Need not have same dimensions as static
+    nBins: int
+        Number of histogram bins
+    sampling_prop, level_iters, sigmas, factors, params0: see dipy
+    static_grid2world: None or array, (4, 4)
+        Static to physical space mapping affine transformation matrix. If None,
+        then identity matrix
+    moving_grid2world: None or array, (4, 4)
+        Moving to physical space mapping affine transformation matrix. If None,
+        then identity matrix
+    Returns
+    -------
+    moving_transformed: array, static.shape
+        Transformed volume
+    affine: object
+        Object with stored transformation parameters and methods for
+        transforming other volumes
+
+    """
+    from dipy.align.imaffine import (transform_centers_of_mass,
+                                     MutualInformationMetric,
+                                     AffineRegistration)
+    from dipy.align.transforms import (AffineTransform3D,
+                                       TranslationTransform3D)
+    metric = MutualInformationMetric(nBins, sampling_prop)
+    affreg = AffineRegistration(metric=metric, level_iters=level_iters,
+                                sigmas=sigmas, factors=factors,
+                                verbosity=verbosity)
+    dtype_orig = static.dtype
+    static = static - static.min()
+    moving = moving - moving.min()
+    static = static.astype(np.float64)
+    moving = moving.astype(np.float64)
+    if static_grid2world is None:
+        static_grid2world = np.eye(4)
+    static, static_nii = volToNifti(static, grid2world=static_grid2world)
+
+    if moving_grid2world is None:
+        moving_grid2world = np.eye(4)
+    moving, moving_nii = volToNifti(moving, grid2world=moving_grid2world)
+
+    print('Initial center of mass alignment...')
+    com = transform_centers_of_mass(static, static_nii.affine,
+                                    moving, moving_nii.affine)
+    moving_com = com.transform(moving)
+    reg = affreg.optimize(static, moving, AffineTransform3D(), params0,
+                                  static_nii.affine, moving_nii.affine,
+                                  starting_affine=com.affine)
+
+    moving_affine = reg.transform(moving)
+    moving_affine = np.transpose(moving_affine, (2,1,0))
+    return moving_affine, reg
 
 
 def threshold_multi(img, n=3):

@@ -33,7 +33,18 @@ def add_suffix_to_paths(paths, suffix='proc'):
 
 def append_fishPos_to_xls(xls):
     """Given the xls dataframe, reads the HDF files at the end of the paths in
-    the datrame, extracts fish information
+    the datrame, extracts fish position and other relevant information and
+    appends this to the dataframe
+    Parameters
+    ----------
+    xls: pandas dataframe
+        The dataframe which contains paths (xls.Path) to the HDF files with
+        fish position information
+    Returns
+    -------
+    df: pandas dataframe
+        Dataframe that still contains the paths to hdf files, but that also has
+        additional information about fish position, etc
     """
     from apCode.FileTools import findAndSortFilesInDir
 
@@ -129,6 +140,77 @@ def append_fishPos_to_xls(xls):
         else:
             pass
     return pd.concat(df)
+
+def append_latency_to_df(df, var='swimVel', nKer=100, ind_start=50, zThr=1,
+                         dt=1/500):
+    """
+    Parameters
+    ----------
+    df: pandas dataframe
+        The number of rows of df must correspond to the total number of trials
+        because the program assumes this when computing onset latencies
+    """
+    from apCode.machineLearning.preprocessing import Scaler
+    from apCode.SignalProcessingTools import causalConvWithSemiGauss1d
+    from apCode.SignalProcessingTools import levelCrossings
+
+    swimVel = np.array([np.array(_) for _ in df[var]])
+    nTrls = len(swimVel)
+    swimVel_ser = causalConvWithSemiGauss1d(swimVel.flatten(), n=nKer)
+    scaler = Scaler(with_mean=False)
+    swimVel_trl = scaler.fit_transform(swimVel_ser[:, None]).reshape(nTrls, -1)
+    lats = np.ones((nTrls, ))*np.nan
+    latsToFirstPk = lats.copy()
+    for iTrl, trl in enumerate(swimVel_trl):
+        onInds = levelCrossings(trl, thr=zThr)[0]
+        if len(onInds)>0:
+            # inds_keep = np.where(onInds >= ind_start)[0]
+            # if len(inds_keep) > 0:
+            #     onInd = onInds[inds_keep][0]
+            #     lats[iTrl] = onInd-ind_start
+            lats[iTrl] = 1000*(onInds[0]-ind_start)*dt # In milliseconds
+    df = df.assign(onsetLatency=lats)
+    return df
+
+
+
+def detect_noisy_trials(df, nKer : int = 100,
+                        var : str = 'swimVel',
+                        convolve : bool = True) -> 'dataframe':
+    """Use a Gaussian Mixture Model to identify noisy points in trials
+    and eliminate noisy trials from the dataframe
+    Parameters
+    ----------
+    df: pandas dataframe
+        Each row of the dataframe must correspond to a single trial
+    nKer: int
+        Kernel length for smoothing the relevant timeseries before fitting a
+        GM model
+    Returns
+    -------
+    df_new: pandas dataframe
+        New dataframe with additional column f"noisyTrlInds_{var}" which is
+        a boolean with values of 1 corresponding to trials identified as noisy.
+    """
+    from apCode.machineLearning.ml import GMM
+    from apCode.SignalProcessingTools import causalConvWithSemiGauss1d
+    swimVel = np.array([np.array(_) for _ in df[var]])
+    nTrls = len(swimVel)
+    swimVel_ser = swimVel.flatten()
+    if convolve:
+        swimVel_ser = causalConvWithSemiGauss1d(swimVel_ser, n=nKer)
+    swimVel_trl = swimVel_ser.reshape(nTrls, -1)
+    print('Fitting GMM model for detection of noisy trials...')
+    gmm = GMM(n_components=3).fit(swimVel_ser[:, None])
+    noiseLbl = np.argmax(gmm.means_)
+    noisyTrlInds = np.zeros((nTrls, ))
+    for iTrl, trl in enumerate(swimVel_trl):
+        lbls = gmm.predict(trl[:, None])
+        if len(np.intersect1d([noiseLbl], lbls)) > 0:
+            noisyTrlInds[iTrl] = 1
+    kwargs = {f'noisyTrlInds_{var}' : noisyTrlInds}
+    df = df.assign(**kwargs)
+    return df
 
 
 def get_img_props(paths_to_imgs, diam=50, plotBool: bool = False,
