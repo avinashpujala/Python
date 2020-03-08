@@ -9,11 +9,143 @@ from pathlib import Path
 import dask
 from dask.diagnostics import ProgressBar
 import numpy as np
-
+import os
 
 def augmentImageData(images_train, images_mask, upsample=10,
-                     aug_set=('rn', 'sig', 'log', 'inv', 'heq', 'rot', 'et',
-                              'rs')):
+                     aug_set=('rn', 'sig', 'log', 'inv', 'heq', 'rot', 'rs')):
+    """
+    Augment image data prior to training to increase the size of the training
+    data, and minimize overfitting to particular dataset.
+    Parameters
+    ----------
+    images_train: array, (nImgs, *imgDims)
+        Training images.
+    images_mask: array, (T, M, N)
+        Masks for the training images
+    upsample: scalar
+        The factor by which the training set approximately grows after
+        augmentation. If upsample = s, then the augmented training set
+         will have s*T images
+    aug_set: list of strings
+        A list of strings wherein each string is an abbreviation for a type of
+        augmentation. The allowed strings are
+        'rn' - random noise; random noise is introduced into the images
+        'rot' - rotation by a random angle between 0 and 360 degrees
+        'sig' - sigmoid adjustment
+        'log' - logarithmic adjustment
+        'inv' - intensity inversion; dim pixels become bright and vice versa.
+        'heq' - histogram equalization; should account for variations in
+                lighting conditions.
+        'rs' -  rescaling around mask and resizing back to old dimensions
+        'sob' - Sobel filter to make the edges pronounced
+        By default, each of these transormations ('rs' is omitted by default)
+        is included with equal frequency, but this can be controlled by
+        altering 'aug_set'. For instance, aug_set = ('rn', 'rn', 'rn', 'heq')
+        will only introduce random noise injection and histogram equalization
+        with the latter occurring thrice as often.
+    Returns
+    -------
+    I_aug: array, (T_aug, M, N[,nChannels]), where T_aug = upsample*T
+        Augmented training image set
+    M_aug: array, (T_aug, M, N)
+        Augmented mask set
+    A_aug: List, (T_aug,)
+        List of transformation applied to each of the images in the I_aug
+    """
+    from skimage.util import random_noise
+    from skimage import exposure
+    from apCode.volTools import img as img_
+    import time
+    from skimage.color import gray2rgb, rgb2gray
+    from skimage.exposure import rescale_intensity
+    from skimage.filters import sobel
+    upsample = np.max((1, upsample))
+    nImgs = int(images_train.shape[0]*upsample)-images_train.shape[0]
+    imgInds = np.random.choice(np.arange(images_train.shape[0]), size=nImgs,
+                               replace=True)
+    def map255(x): return (x*255).astype(int)
+    def apply_func(func, imgs, *args, **kwargs):
+        if np.ndim(imgs)==3:
+            imgs = np.transpose(imgs, (2, 0, 1))
+            imgs_trans = [func(_, *args, **kwargs) for _ in imgs]
+            imgs_trans = np.array(imgs_trans).transpose(1, 2, 0)
+        else:
+            imgs_trans = func(imgs, *args, **kwargs)
+        return imgs_trans
+    images, M = [], []
+    A = []
+    count = 0
+    for img, mask in zip(images_train[imgInds], images_mask[imgInds]):
+        ind_ = np.mod(count, len(aug_set))
+        aug_ = aug_set[ind_]
+        if aug_ == 'rn':
+            def func_now(x): return map255(x + np.random.randn(*x.shape)/7)
+            images.append(dask.delayed(func_now)(img))
+            M.append(mask)
+            A.append(aug_)
+        elif aug_ == 'rot':
+            theta = int(np.random.choice(range(0, 360), size=1))
+            def func_now(x):
+                return apply_func(img_.rotate, x, theta, preserve_dtype=True)
+            images.append(dask.delayed(func_now)(img))
+            M.append(dask.delayed(func_now)(mask))
+            A.append(aug_)
+        elif aug_ == 'sig':
+            def func_now(x):
+                return apply_func(exposure.adjust_sigmoid, x.astype(int))
+            images.append(dask.delayed(func_now)(img))
+            M.append(mask)
+            A.append(aug_)
+        elif aug_ == 'log':
+            def func_now(x):
+                return apply_func(exposure.adjust_log, x)
+            images.append(dask.delayed(func_now)(img))
+            M.append(mask)
+            A.append(aug_)
+        elif aug_ == 'inv':
+            def func_now(x): return x.max()-x
+            images.append(dask.delayed(func_now)(img))
+            M.append(mask)
+            A.append(aug_)
+        elif aug_ == 'heq':
+            def func_now(x):
+                return map255(apply_func(exposure.equalize_hist, x))
+            images.append(dask.delayed(func_now)(img))
+            M.append(mask)
+            A.append(aug_)
+        elif aug_ == 'rs':
+            sf = np.random.choice(np.linspace(1.1, 1.5, 5), size=1)
+            def func_now(x): return apply_func(rescaleIsometrically, x, sf)
+            images.append(dask.delayed(func_now)(img))
+            M.append(dask.delayed(func_now)(mask))
+            A.append('rs')
+        elif aug_ == 'sob':
+            def func_now(x): return map255(apply_func(sobel, x))
+            images.append(dask.delayed(func_now)(img))
+            M.append(mask)
+            A.append('sob')
+        count += 1
+    images = np.array(dask.compute(*images))
+    masks =[]
+    for mask in M:
+        if not isinstance(mask, np.ndarray):
+            masks.append(mask.compute())
+        else:
+            masks.append(mask)
+    masks = np.array(masks)
+    augs = np.array(A)
+    images = np.concatenate((images_train, images), axis=0)
+    masks = np.concatenate((images_mask, masks), axis=0)
+    augs = np.concatenate((np.array(['None']*images_train.shape[0]), augs))
+    inds_shuffle = np.random.choice(np.arange(images.shape[0]),
+                                    size=images.shape[0], replace=False)
+    images, masks, augs = images[inds_shuffle], masks[inds_shuffle], augs[inds_shuffle]
+    return images, masks, augs
+
+
+def augmentImageData_old(images_train, images_mask, upsample=10,
+                     aug_set=('rn', 'sig', 'log', 'inv', 'heq', 'rot', 'rs',
+                              'sob', 'et')):
     """
     Augment image data prior to training to increase the size of the training
     data, and minimize overfitting to particular dataset.
@@ -38,6 +170,7 @@ def augmentImageData(images_train, images_mask, upsample=10,
         'heq' - histogram equalization; should account for variations in
                 lighting conditions.
         'rs' -  rescaling around mask and resizing back to old dimensions
+        'sob' - Sobel filter to make the edges pronounced
         By default, each of these transormations ('rs' is omitted by default)
         is included with equal frequency, but this can be controlled by
         altering 'aug_set'. For instance, aug_set = ('rn', 'rn', 'rn', 'heq')
@@ -45,7 +178,7 @@ def augmentImageData(images_train, images_mask, upsample=10,
         with the latter occurring thrice as often.
     Returns
     -------
-    I_aug: array, (T_aug, M, N), where T_aug = upsample*T
+    I_aug: array, (T_aug, M, N[,nChannels]), where T_aug = upsample*T
         Augmented training image set
     M_aug: array, (T_aug, M, N)
         Augmented mask set
@@ -59,6 +192,7 @@ def augmentImageData(images_train, images_mask, upsample=10,
     import time
     from skimage.color import gray2rgb, rgb2gray
     from skimage.exposure import rescale_intensity
+    from skimage.filters import sobel
     upsample = np.max((1, upsample))
     nImgs = int(images_train.shape[0]*upsample)-images_train.shape[0]
     imgInds = np.random.choice(np.arange(images_train.shape[0]), size=nImgs,
@@ -79,7 +213,7 @@ def augmentImageData(images_train, images_mask, upsample=10,
             t = int(time.monotonic())
             rs = np.random.RandomState(t)
             foo = rescale_intensity(rgb2gray(elastic_transform(
-                gray2rgb(img), 5, 1, 20, random_state=rs)),
+                gray2rgb(img), random_state=rs)),
                 out_range=(0, 255)).astype(img.dtype)
             images.append(foo)
             foo = rescale_intensity(rgb2gray(elastic_transform(
@@ -89,7 +223,15 @@ def augmentImageData(images_train, images_mask, upsample=10,
             A.append(aug_)
         elif aug_ == 'rot':
             theta = int(np.random.choice(range(0, 360), size=1))
-            images.append(img_.rotate(img, theta, preserve_dtype=True))
+            img_rot = []
+            if np.ndim(img)==3:
+                for iCh in range(img.shape[2]):
+                    img_rot.append(img_.rotate(img[..., iCh], theta,
+                                               preserve_dtype=True))
+                img_rot = np.transpose(img_rot, (1, 2, 0))
+            else:
+                img_rot = img_.rotate(img, theta, preserve_dtype=True)
+            images.append(img_rot)
             M.append(img_.rotate(mask, theta, preserve_dtype=True))
             A.append(aug_)
         elif aug_ == 'sig':
@@ -105,16 +247,36 @@ def augmentImageData(images_train, images_mask, upsample=10,
             M.append(mask)
             A.append(aug_)
         elif aug_ == 'heq':
-            images.append(map255(exposure.equalize_hist(img)))
+            if np.ndim(img)==3:
+                for ch in range(img.shape[2]):
+                    img[..., ch] = map255(exposure.equalize_hist(img[..., ch]))
+            else:
+                img = map255(exposure.equalize_hist(img))
+            images.append(img)
             M.append(mask)
             A.append(aug_)
         elif aug_ == 'rs':
             sf = np.random.choice(np.linspace(1.1, 1.5, 5), size=1)
-            img_rs = rescaleIsometrically(img, sf)
+            if np.ndim(img)==3:
+                img_rs = []
+                for ch in range(img.shape[2]):
+                    img_rs.append(rescaleIsometrically(img[..., ch], sf))
+                img_rs = np.transpose(np.array(img_rs), (1, 2, 0))
+            else:
+                img_rs = rescaleIsometrically(img, sf)
             mask_rs = rescaleIsometrically(mask, sf)
             images.append(img_rs)
             M.append(mask_rs)
             A.append('rs')
+        elif aug_ == 'sob':
+            if np.ndim(img)==3:
+                for ch in range(img.shape[2]):
+                    img[..., ch] = map255(sobel(img[..., ch]))
+            else:
+                img = map255(sobel(img))
+            images.append(img)
+            M.append(mask)
+            A.append('sob')
         count += 1
     images, M, A = np.array(images), np.array(M), np.array(A)
     images = np.concatenate((images_train, images), axis=0)
@@ -166,9 +328,6 @@ def copyImgsNNTraining(imgDirs, prefFrameRangeInTrl=None,
     dst: string
         Path to directory of stored images
     """
-    import numpy as np
-    import dask
-    import os
     import apCode.FileTools as ft
     import shutil as sh
     from apCode.util import timestamp
@@ -224,7 +383,8 @@ def copyImgsNNTraining(imgDirs, prefFrameRangeInTrl=None,
     return files_sel, dst
 
 
-def elastic_transform(image, alpha, sigma, alpha_affine, random_state=None):
+def elastic_transform(image, alpha=5, sigma=1, alpha_affine=20,
+                      random_state=None):
     """Elastic deformation of images as described in [Simard2003]
         (with modifications).
     .. [Simard2003] Simard, Steinkraus and Platt, "Best Practices for
@@ -329,7 +489,7 @@ class PatchifyImgs:
         Verbosity of the output when running parallel processes
     """
 
-    def __init__(self, patchSize=(50, 50), stride=1, n_jobs=32, verbose=1):
+    def __init__(self, patchSize=(50, 50), stride=1, n_jobs=32, verbose=0):
         if np.ndim(patchSize) < 2:
             patchSize_ = np.ones((2,), dtype=int)*patchSize
         if np.ndim(stride) < 2:
@@ -755,6 +915,40 @@ class GMM(_GMM):
         return labels_sorted
 
 
+def prepare_imgs_for_unet(imgs, unet):
+    """
+    Prepare images to be input to a U net
+    Parameters
+    ----------
+    imgs: array, (nImgs, *imgDims[, nCh])
+        Images
+    unet: object
+        U net model
+    Returns
+    -------
+    imgs_u: array, (nImgs, *imgsDims_new, nCh)
+        Images ready to be input to U net
+    """
+    import apCode.volTools as volt
+    uDims = unet.input_shape[1:3]
+    if np.ndim(imgs)==3:
+        nCh = 1
+    elif np.ndim(imgs)==4:
+        nCh = imgs.shape[-1]
+    elif np.ndim(imgs)==2:
+        nCh = 1
+    else:
+        raise IOError('Check images dimension: Must be between 2 and 4')
+    imgDims = imgs.shape[1:3]
+    d = np.sum((np.array(uDims)-np.array(imgDims))**2)
+    if d > 0:
+        imgs_rs = volt.img.resize(imgs, uDims)
+    else:
+        imgs_rs = imgs
+    if nCh==1:
+        imgs_rs = imgs_rs[..., None]
+    return imgs_rs
+
 def prepareImagesForUnet(images, sz=(512, 512)):
     """
     Resizes and adjusts dimensions of image or image stack for training or
@@ -809,8 +1003,6 @@ def readAllTrainingImagesAndMasks(rootDir,
         images_train, masks_train: arrays, (numberOfImages, imageHeight,
                                             imageWidth)
     """
-    import os
-    import numpy as np
     from apCode.FileTools import findAndSortFilesInDir
     from apCode.volTools import img as im
     from apCode.util import timestamp
@@ -844,6 +1036,77 @@ def readAllTrainingImagesAndMasks(rootDir,
         save_dict_to_hdf5(out, hFilePath)
         print(f'Saved to hdf file at {hFilePath}')
     return out
+
+
+def read_training_images_and_masks(dirs_img, dirs_mask, imgDims=(256, 256)):
+    """
+    Read images and masks from lists of directories and resize to specified
+    dimensions if need be.
+    Parameters
+    ----------
+    dirs_img: list-like
+        List of directories containing training images
+    dirs_mask: list-like
+        List of directories containing masks
+    imgDims: tuple or None
+        Dimensions of the output images and masks. If None, then does not
+        resize
+    """
+    import apCode.volTools as volt
+    imgs, masks = [], []
+    for dir_img, dir_mask in zip(dirs_img, dirs_mask):
+        imgs_ = volt.img.readImagesInDir(dir_img)
+        masks_ = readImageJRois(dir_mask, imgs_.shape[-2:])[0][:imgs_.shape[0]]
+        if imgDims is not None:
+            if np.sum(np.abs(np.array(imgDims)-np.array(imgs_.shape[-2:])))>0:
+                imgs_ = volt.img.resize(imgs_, imgDims)
+                masks_ = volt.img.resize(masks_, imgDims)
+        imgs.append(imgs_)
+        masks.append(masks_)
+    if imgDims is not None:
+        imgs = np.concatenate(imgs, axis=0)
+        masks = np.concatenate(masks, axis=0)
+    return imgs, masks
+
+
+def read_training_images_and_masks_2ch(dirs_img, dirs_mask,
+                                       imgDims=(896, 896), back_func='mean'):
+    """
+    Read images and masks from lists of directories and resize to specified
+    dimensions if need be.
+    Parameters
+    ----------
+    dirs_img: list-like
+        List of directories containing training images
+    dirs_mask: list-like
+        List of directories containing masks
+    imgDims: tuple or None
+        Dimensions of the output images and masks. If None, then does not
+        resize
+    back_func: str, 'max', 'min', 'mean' or 'median'
+    """
+    import apCode.volTools as volt
+    imgs, masks = [], []
+    for dir_img, dir_mask in zip(dirs_img, dirs_mask):
+        imgs_ = volt.img.readImagesInDir(dir_img)
+        masks_ = readImageJRois(dir_mask, imgs_.shape[-2:])[0][:imgs_.shape[0]]
+        func = eval(f'np.{back_func}')
+        bgd = func(imgs_, axis=0)[np.newaxis,...]
+        # bgd = imgs_.max(axis=0)[np.newaxis,...]
+        if imgDims is not None:
+            if np.sum(np.abs(np.array(imgDims)-np.array(imgs_.shape[-2:])))>0:
+                imgs_ = volt.img.resize(imgs_, imgDims)
+                masks_ = volt.img.resize(masks_, imgDims)
+                bgd = volt.img.resize(bgd, imgDims)
+        bgd = np.tile(bgd, [len(imgs_), 1, 1])[..., np.newaxis]
+        imgs_ = imgs_[..., np.newaxis]
+        imgs_bgd = np.concatenate((imgs_, bgd), axis=3)
+        imgs.append(imgs_bgd)
+        masks.append(masks_)
+    if imgDims is not None:
+        imgs = np.concatenate(imgs, axis=0)
+        masks = np.concatenate(masks, axis=0)
+    return imgs, masks
 
 
 def readImageJRois(roiZipPath, imgDims, multiLevel=True, levels=None):
@@ -1063,8 +1326,6 @@ def readImageJRois_old(roiZipPath, imgDims):
 
 
 def rescaleIsometrically(images, *args, pad_type='mean', **kwargs):
-    import numpy as np
-    import dask
     from skimage.transform import rescale
     from apCode.volTools import cropND
 
@@ -1160,7 +1421,7 @@ def rescale(images, masks, pad_type='edge', n_jobs=32, verbose=0):
 def retrainU(uNet, imgsOrPath, masksOrPath, upSample=6, imgExt: str = 'bmp',
              n_jobs: int = 32, verbose: int = 0, epochs: int = 50,
              saveModel: bool = True, multiLevel=False,
-             aug_set=('rn', 'sig', 'log', 'inv', 'heq', 'rot', 'et', 'rs')):
+             aug_set=('rn', 'sig', 'log', 'inv', 'heq', 'rot', 'rs'), **fit_kwargs):
     """
     Further trains a pre-trained U net model
     Parameters
@@ -1188,12 +1449,10 @@ def retrainU(uNet, imgsOrPath, masksOrPath, upSample=6, imgExt: str = 'bmp',
     -------
     uNet: The trained uNet
     """
-    import os
     import time
     import apCode.volTools as volt
     from apCode.machineLearning import ml
     import apCode.behavior.FreeSwimBehavior as fsb
-    import numpy as np
     if not isinstance(imgsOrPath, np.ndarray):
         images = volt.img.readImagesInDir(imgsOrPath, verbose=0, ext=imgExt)
     else:
@@ -1205,17 +1464,17 @@ def retrainU(uNet, imgsOrPath, masksOrPath, upSample=6, imgExt: str = 'bmp',
     else:
         masks = masksOrPath
 
+    print('Augmenting...')
     images, masks = ml.augmentImageData(images, masks, upsample=upSample,
                                         aug_set=aug_set)[:2]
-    images = fsb.prepareForUnet_1ch(images, sz=uNet.input_shape[1:3],
-                                    n_jobs=n_jobs, verbose=0)
-    masks = fsb.prepareForUnet_1ch(masks, sz=uNet.input_shape[1:3],
-                                   n_jobs=n_jobs, verbose=0)
+
+    images = prepare_imgs_for_unet(images, uNet)
+    masks = prepare_imgs_for_unet(masks, uNet)
     masks_max = masks.max()
     if (not multiLevel) & (masks_max > 1):
         masks = (masks/masks_max).astype(int)
     print('Training unet...')
-    uNet.fit(images, masks, verbose=verbose, epochs=epochs)
+    uNet.fit(images, masks, verbose=verbose, epochs=epochs, **fit_kwargs)
     if saveModel:
         dir_save = os.path.split(imgsOrPath)[0]
         file_save = 'trainedUnet_{}.h5'.format(time.strftime('%Y%m%dT%H%m'))

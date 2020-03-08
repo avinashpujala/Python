@@ -348,7 +348,31 @@ def filter_bilateral(images, diam=6, sigma_space=1, sigma_color=5000):
     images_bil = [del_func(img, diam, sigma_color, sigma_space)
                   for img in images]
     images_bil = np.array(dask.compute(*images_bil))
-    return images_bil
+    return np.squeeze(images_bil)
+
+def filter_gaussian(imgs, kSize = 5, sigma=1):
+    """
+    Fast, opencv GaussianBlur of images
+    Parameters
+    ----------
+    imgs: array, (nImgs, *imgDims)
+        Images
+    kSize: int or 2-tuple of ints
+        Kernel size
+    sigma: int
+        Filter sigma
+    Returns
+    --------
+    imgs_flt: array, imgs.shape
+        Filtered images
+    """
+    import cv2
+    if np.ndim(kSize) < 2:
+        kSize = np.ones((2, ), dtype=int)*kSize
+    kSize = tuple((kSize//2)*2+1)
+    imgs_flt = [dask.delayed(cv2.GaussianBlur)(_, kSize, sigma) for _ in imgs]
+    imgs_flt = np.array(dask.compute(*imgs_flt))
+    return imgs_flt
 
 
 def getGlobalThr(img, thr0=[], tol=1/500, nIter_max=100):

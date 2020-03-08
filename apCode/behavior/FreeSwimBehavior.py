@@ -6,7 +6,11 @@ Created on Mon Oct  5 15:50:40 2015
 """
 import numpy as np
 import sys
-sys.path.insert(1, 'v:/code/python/code')
+import os
+import dask
+import h5py
+from dask.diagnostics import ProgressBar
+sys.path.append(r'v:/code/python/code')
 
 
 def alignSignalsByOnset_old(signals, startSignalInd=0, nPre=30,
@@ -26,7 +30,6 @@ def alignSignalsByOnset_old(signals, startSignalInd=0, nPre=30,
         If 'zero', then zero pads signals, else edge pads.
 
     """
-    import numpy as np
     if not isinstance(signals, list):
         signals = list(signals)
     sigLens = np.array([len(s) for s in signals])
@@ -84,7 +87,6 @@ def alignSignalsByOnset(signals, startSignalInd = 0, padType = 'edge'):
         If 'zero', then zero pads signals, else edge pads.
 
     """
-    import numpy as np
     if not isinstance(signals, list):
         signals = list(signals)
     sigLens = np.array([len(s) for s in signals])
@@ -196,7 +198,6 @@ def analyzeDistribution(x, comps = 5, plotBool = True, xLabel = '', distType ='k
         The hist and bins are in gmm.hist_
         The AIC and BIC are in gmm.ic_
     """
-    import numpy as np
     import matplotlib.pyplot as plt
     import apCode.machineLearning.ml as ml
     from sklearn.mixture import GaussianMixture as GMM
@@ -351,7 +352,6 @@ def bendInfoFromTotalCurvature(x, thr = (2,0.5), n_ker = 250, fps = 500):
         If no more than 1 peak found, then return empty dictionary
     """
     import apCode.SignalProcessingTools as spt
-    import numpy as np
     thr = np.array(thr)
     n_ker = int(n_ker)
     x_std = spt.zscore(x)
@@ -384,7 +384,6 @@ def bendInfoFromTotalCurvature(x, thr = (2,0.5), n_ker = 250, fps = 500):
 
 
 def centerImagesOnFish(I,fishPos):
-    import numpy as np
     if len(np.shape(I))==3:
         img = I[0]
     elif len(np.shape(I))==2:
@@ -397,6 +396,86 @@ def centerImagesOnFish(I,fishPos):
     I_roll = list(map(lambda x, y: np.roll(x,origin[1]-y[1],axis = 1), I_roll,fishPos))
     return I_roll
 
+def copy_cropped_images_for_training(imgsOrPath, cropSize=(120, 120),
+                                     savePath=None, nImgsToCopy=50,
+                                     detect_motion_frames=True, **motion_kwargs):
+    """
+    Return probability images generated using the specified U net.
+    Parameters
+    ----------
+    imgsOrPath: array, (nImgs, *imgDims)
+        Images to train U net on
+    cropSize: 2-tuple, int or None
+        Size to crop images to around the fish. A fish detection algorithm
+        is used to detect fish that involves background subtraction, therefore,
+        all the images must be from the same experiment and must contain a
+        single fish at most
+        If None, then does not crop images
+    savePath: None or str
+        Path to directory where images are to be saved
+    detect_motion_frames: bool
+        If True, then tries to detect frames capturing fish in motion
+    motion_kwargs: dict
+        Keyword arguments for estimate_motion
+    Returns
+    -------
+    imgs_crop: array, (nImgsToCopy, *cropSize)
+        Cropped images
+    """
+    from apCode.machineLearning import ml as mlearn
+    import apCode.volTools as volt
+    import apCode.FileTools as ft
+    from apCode import util
+    daskArr = False
+    if isinstance(imgsOrPath, str):
+        imgs = volt.dask_array_from_image_sequence(imgsOrPath)
+        daskArr = True
+    else:
+        imgs = imgsOrPath
+
+    # Compute background
+    n = np.minimum(1000, imgs.shape[0])
+    inds = np.linspace(0, imgs.shape[0]-1, n).astype(int)
+    imgs_back = imgs[inds]
+    print('Computing background...')
+    if daskArr:
+        imgs_back = imgs_back.compute()
+    else:
+        imgs_back = imgs_back
+
+    bgd = imgs_back.mean(axis=0)
+    if detect_motion_frames:
+        print('Detecting motion frames...')
+        motion = estimate_motion(imgs, **motion_kwargs)
+        thr = np.percentile(motion, 90)
+        motion_frames = np.where(motion >= thr)[0]
+        imgs = imgs[motion_frames]
+    nImgsToCopy = np.minimum(nImgsToCopy, imgs.shape[0])
+    inds = np.random.permutation(imgs.shape[0])[:nImgsToCopy]
+    imgs = imgs[inds]
+
+    if isinstance(imgs, dask.array.core.Array):
+        imgs = imgs.compute()
+
+    if cropSize is None:
+        imgs_crop = imgs
+    else:
+        imgs_back = bgd-imgs
+        print('Tracking fish...')
+        fp = np.array([track.findFish(_) for _ in imgs_back])
+        print(f'Cropping images to size {cropSize}')
+        imgs_crop = volt.img.cropImgsAroundPoints(imgs, fp, cropSize=cropSize)
+
+    if savePath is not None:
+        imgDims = imgs.shape[-2:]
+        name_dir = f'images_train_{imgDims[0]}x{imgDims[1]}_{util.timestamp()}'
+        path_save = os.path.join(savePath, name_dir)
+        if not os.path.exists(path_save):
+            os.mkdir(path_save)
+        volt.img.saveImages(imgs_crop, imgDir=path_save)
+        print(f'Saved images at\n {path_save}')
+    return imgs_crop
+
 
 def cropImagesAroundArena(I):
     '''
@@ -404,7 +483,6 @@ def cropImagesAroundArena(I):
     '''
     from scipy import signal
     import apCode.SignalProcessingTools as spt
-    import numpy as np
     import apCode.volTools as volt
     I_mu = np.mean(I,axis= 0)
     #I_grad = np.abs(np.gradient(I_mu))
@@ -470,8 +548,6 @@ def deleteIncompleteTrlImgs(imgDir,nImagesInTrl = 500*1.5 + 30*60, imgExt = 'bmp
 
     '''
     import apCode.FileTools as ft
-    import numpy as np
-    import os
 
     filesInDir= ft.findAndSortFilesInDir(imgDir,ext = imgExt)
     filesInDir = [os.path.join(imgDir,fileInDir) for fileInDir in filesInDir]
@@ -483,13 +559,50 @@ def deleteIncompleteTrlImgs(imgDir,nImagesInTrl = 500*1.5 + 30*60, imgExt = 'bmp
     os.remove(filesInDir[-1])
     print('Done!')
 
+def estimate_motion(imgs, bgd=None, kSize=11, inds_skip=(2, 2, 2)):
+    """
+    Tries to estimate fish motion from images and returns
+    Parameters
+    ----------
+    imgs: array, (nImgs, *imgDims)
+        Images
+    bgd: array, (*imgDims)
+        Background image to subtract. If None, then computes
+    kSize: int
+        Kernel size for gaussian blurring of images
+    inds_skip: int
+        If too many images, then can speed up by skipping this many images
+    Returns
+    --------
+    mot: array, (nImgs, )
+        Estimate of motion
+    """
+    import apCode.volTools as volt
+    from scipy.interpolate import interp1d
+    inds = np.arange(imgs.shape[0])
+    imgs = imgs[::inds_skip[0],::inds_skip[1],::inds_skip[2]]
+    if bgd is None:
+        n = np.minimum(imgs.shape[0], 1000)
+        inds_back = np.linspace(0, imgs.shape[0]-1, n).astype(int)
+        inds_back = np.unique(inds_back)
+        bgd = imgs[inds_back].mean(axis=0)
+    else:
+        bgd = bgd[::inds_skip[1], ::inds_skip[2]]
+    imgs = imgs-bgd
+    dImgs = np.abs(np.diff(imgs, axis=0))
+    dImgs = volt.filter_gaussian(dImgs, kSize=kSize, sigma=6)
+    m = np.apply_over_axes(np.max, dImgs, [1, 2]).flatten()
+    m = np.r_[[0], m, m[-1]]
+    x = np.r_[inds[::inds_skip[0]], inds[-1]+1]
+    m_interp = interp1d(x, m)(inds)
+    return m_interp
+
 def filterFishData(data,dt= 1./1000,Wn=100, btype = 'low', \
        keysToOmit = ['time','axis1','axis2','axis3']):
     '''
     Filters all signals in data except the values for keys in keysToOmit
     '''
     import SignalProcessingTools as spt
-    import numpy as np
     import copy
     data_flt = copy.deepcopy(data)
     keys = list(data_flt[0].keys())
@@ -507,6 +620,111 @@ def filterFishData(data,dt= 1./1000,Wn=100, btype = 'low', \
     return data_flt
 
 
+def fish_imgs_from_raw(imgs, unet, bgd=None, prob_thr=0.1, diam=11,
+                       sigma_space=1, method='fast', **unet_predict_kwargs):
+    """
+    Returns prob and fish blob binary images when given raw images and a
+    trained U net
+    Parameters
+    ----------
+    imgs: array, (nImgs, *imgDims)
+        Raw images
+    unet: Keras model object
+        Trained U net model
+    bgd: array (*imgDims), None  or 'compute'
+        Background image
+    prob_thr: scalar
+        Threshold probability to us to generate binary fish blob images from
+        probability images
+    diam: int
+        Diameter of bilateral filter during processing
+    sigma_space: int
+        cv2 bilteral filter parameter
+    method: str, 'fast' or 'slow'
+    unet_predict_kwargs: dict
+        Keyword argument for unet.predict function
+    Returns
+    -------
+    imgs_fish, imgs_prob: array, (nImgs, *imgDims)
+        Binary fish blob and probability images respectively
+    """
+    import apCode.volTools as volt
+    from skimage.measure import regionprops, label
+
+    def _fish_img_from_raw(img_prob, img_prob2, prob_thr):
+        mask = (img_prob2 > prob_thr).astype('uint8')
+        lbls = label(mask)
+        regions = regionprops(lbls)
+        if len(regions)>1:
+            perimeters = np.array([region.perimeter for region in regions])
+            ind = np.argmax(perimeters)
+            region = regions[ind]
+        elif len(regions)==1:
+            region = regions[0]
+        else:
+            return img_prob
+        cent = np.array(region.centroid)
+        regions = regionprops(label((img_prob > prob_thr).astype('uint8')))
+        if len(regions)>1:
+            cents = np.array([region.centroid for region in  regions])
+        elif len(regions)==1:
+            cents = np.array(regions[0].centroid)
+        else:
+            return img_prob
+        dists = np.sum((cents.reshape(-1, 2)-cent.reshape(1, 2))**2, axis=1)**0.5
+        ind = np.argmin(dists)
+        coords = regions[ind].coords
+        img_fish = np.zeros_like(img_prob)
+        img_fish[coords[:, 0], coords[:, 1]]=1
+        return img_fish
+
+    def _fish_img_from_raw_fast(img_prob, img_raw, prob_thr):
+        mask = (img_prob > prob_thr).astype('uint8')
+        img_lbl = label(mask)
+        regions = regionprops(img_lbl, -img_raw*img_prob)
+        if len(regions)>1:
+            max_ints = np.array([region.max_intensity for region in regions])
+            ind = np.argmax(max_ints)
+            region = regions[ind]
+        elif len(regions)==1:
+            region = regions[0]
+        else:
+            return img_prob
+        coords = region.coords
+        img_fish = np.zeros_like(img_prob)
+        img_fish[coords[:, 0], coords[:, 1]]=1
+        return img_fish
+
+    imgs_prob = prob_images_with_unet(imgs, unet, **unet_predict_kwargs)
+    imgs_flt = volt.filter_bilateral(imgs_prob, diam=diam,
+                                     sigma_space=sigma_space)
+    if bgd is not None:
+        if bgd is 'compute':
+            bgd = track.computeBackground(imgs)
+        imgs_back = bgd-imgs
+    else:
+        imgs_back = imgs
+    imgs_fish = []
+    if method is 'slow':
+        imgs_prob2 = prob_images_with_unet(imgs_back*imgs_prob, unet,
+                                           **unet_predict_kwargs)
+        imgs_flt2 = volt.filter_bilateral(imgs_prob2, diam=diam,
+                                          sigma_space=sigma_space)
+        for img_prob, img_prob2 in zip(imgs_flt, imgs_flt2):
+            img_fish = dask.delayed(_fish_img_from_raw)(img_prob,
+                                                        img_prob2, prob_thr)
+            imgs_fish.append(img_fish)
+    else:
+        for img_prob, img_raw in zip(imgs_flt, imgs):
+            img_fish = dask.delayed(_fish_img_from_raw_fast)(img_prob,
+                                                             img_raw, prob_thr)
+            imgs_fish.append(img_fish)
+    with ProgressBar():
+        imgs_fish = dask.compute(*imgs_fish)
+    imgs_fish = np.array(imgs_fish).astype('bool')
+    return imgs_fish, imgs_prob
+
+
 def flotifyTrlDirs(trialDir, trializeDirs = 'y', timeStampSep = ']_'):
     '''
     flotifyTrlDirs - Given a directory trializes each subdirectory and renames
@@ -518,9 +736,7 @@ def flotifyTrlDirs(trialDir, trializeDirs = 'y', timeStampSep = ']_'):
         on the directory name
 
     '''
-    import os
     import time
-    import numpy as np
     import apCode.FileTools as ft
     import apCode.volTools as volt
 
@@ -581,8 +797,7 @@ def flotifyTrlDirs_clstr(trialDir, trializeDirs = 'y', timeStampSep = '_'):
         on the directory name
 
     '''
-    import os,time
-    import numpy as np
+    import time
     import apCode.FileTools as ft
     import apCode.volTools as volt
 
@@ -652,8 +867,7 @@ def flotifyTrlDirs_parallel(trialDir, trializeDirs = 'y', timeStampSep = ']_'):
         on the directory name
 
     '''
-    import os,time, multiprocessing
-    import numpy as np
+    import time, multiprocessing
     import apCode.FileTools as ft
     import apCode.volTools as volt
     from joblib import Parallel, delayed
@@ -813,7 +1027,6 @@ def get1stPkInfo(signal,onsetInd, ampZscoreThr = 5):
     onsetInd - Index of response onset
     ampZscoreThr- Amplitude threshold in zscore (default = 5)
     '''
-    import numpy as np
     import SignalProcessingTools as spt
     if ~np.isnan(onsetInd):
         sigPks = spt.findPeaks(np.abs(signal[onsetInd:-1]),thr = ampZscoreThr,minPkDist=5)
@@ -833,7 +1046,6 @@ def getHeadTailCurvatures(data):
     Given fish data, modifies it such that head and tail curvature are added as
         key-value pairs for each fish and trial
     '''
-    import numpy as np
     import volTools as volt
     def headTailCurvatures(axis1,axis2,axis3):
         f = lambda th:np.array(volt.pol2cart(1,th*np.pi/180))
@@ -967,7 +1179,6 @@ def getSwimInfo(data,ampZscoreThr = 1, slopeZscoreThr = 1.5,frameRate=1000, \
                     from previous peak or valley)
 
     '''
-    import numpy as np
     import apCode.SignalProcessingTools as spt
 
     minOnsetInd = int(minLatency*frameRate) + stimFrame
@@ -1400,7 +1611,6 @@ def prepareForUnet_1ch(I, sz = (512,512), n_jobs = 1,verbose = 5):
     """
     Resizes and adjusts dimensions of image or image stack for training or predicting with u-net
     """
-    import numpy as np
     import apCode.volTools as volt
     if np.ndim(I)==2:
         I = I[np.newaxis,...]
@@ -1413,7 +1623,7 @@ def prepareForUnet_1ch(I, sz = (512,512), n_jobs = 1,verbose = 5):
     return I[...,np.newaxis]
 
 
-def prepareForUnet_2ch(images,images_back,sz = (512,512)):
+def prepareForUnet_2ch(images, images_back, sz = (512,512)):
     """
     Resizes and reshapes images for U-net (2 image channels)
     training or prediction.
@@ -1430,7 +1640,6 @@ def prepareForUnet_2ch(images,images_back,sz = (512,512)):
     I: array, ([T,], M, N, 2), where T >= 1, and I[...,0] = raw images,
         and I[...,1] is background subtracted images
     """
-    import numpy as np
     import apCode.volTools as volt
     images = volt.img.resize(images, sz)
     images_back = volt.img.resize(images_back,sz)
@@ -1442,6 +1651,92 @@ def prepareForUnet_2ch(images,images_back,sz = (512,512)):
     images = images[...,np.newaxis]
     images_bs = (images_bs[..., np.newaxis])
     return np.concatenate((images,images_bs),axis = 3).astype(int)
+
+
+def prob_images_with_unet(imgs, unet, **unet_predict_kwargs):
+    """
+    Return probability images generated using the specified U net. Presently,
+    only works for 1 image channel U net
+    Parameters
+    ----------
+    imgs: array, (nImgs, *imgDims)
+        Images to segment with U net
+    unet: unet model or path to unet model (keras)
+        Pre-trained U net for use in segmenting images
+    unet_predict_kwargs: dict
+        Key word arguments for unet.predict function. See documentation on
+        keras models
+    Returns
+    -------
+    imgs_prob: array, (nImgs, *imgDims)
+        Probability images
+    """
+    from apCode.machineLearning import ml as mlearn
+    import apCode.volTools as volt
+    if imgs.ndim==2:
+        imgs = imgs[np.newaxis,...]
+    imgDims = imgs.shape[-2:]
+    uDims = unet.input_shape[1:3]
+    resized=False
+    if np.sum(np.abs(np.array(uDims)-np.array(imgDims)))>0:
+        resized = True
+        # print(f'Resizing imgs: {imgDims} --> {uDims}')
+        imgs = volt.img.resize(imgs, uDims)
+
+    # print('Predicting...')
+    imgs_prob = np.squeeze(unet.predict(imgs[..., None],
+                                        **unet_predict_kwargs))
+
+    if resized:
+        print('Resizing back...')
+        imgs_prob = volt.img.resize(imgs_prob, imgDims)
+    return imgs_prob
+
+
+def prob_images_with_unet_patches(imgs, unet, verbose=2):
+    """
+    Return probability images generated using the specified U net.
+    Parameters
+    ----------
+    imgs: array, (nImgs, *imgDims)
+        Images to segment with U net
+    unet: unet model or path to unet model (keras)
+        Pre-trained U net for use in segmenting images
+    Returns
+    -------
+    imgs_prob: array, (nImgs, *imgDims)
+        Probability images
+    """
+    from apCode.machineLearning import ml as mlearn
+    import apCode.volTools as volt
+    if imgs.ndim==2:
+        imgs = imgs[np.newaxis,...]
+    imgDims = imgs.shape[-2:]
+    patchSize = unet.input_shape[1:3]
+    pow2 = np.log2(np.max(imgDims))
+    resized = False
+    if (np.mod(pow2, 1)!=0) | (pow2 < np.log2(patchSize[0])):
+        pow2 = int(np.floor(pow2)+1)
+        imgDims_rs = (2**pow2,)*2
+        print('Resizing images...')
+        imgs_rs = volt.img.resize(imgs, imgDims_rs)
+        resized=True
+    else:
+        imgDims_rs = imgDims
+        imgs_rs = imgs
+    patchify = mlearn.PatchifyImgs(patchSize=patchSize, stride=patchSize[0],
+                                   verbose=0)
+
+    print('Patchifying images...')
+    imgs_patch = patchify.transform_for_nn(imgs_rs)
+
+    print('Predicting...')
+    imgs_prob = np.squeeze(unet.predict(imgs_patch[..., None], verbose=verbose))
+    imgs_prob = patchify.revert_for_nn(imgs_prob)
+
+    print('Resizing back...')
+    imgs_prob = volt.img.resize(imgs_prob, imgDims)
+    return imgs_prob
 
 
 def radiatingLinesAroundAPoint(pt, lineLength, dTheta = 15, dLine = 1):
@@ -1887,11 +2182,157 @@ def swimOnAndOffsets(x, ker_len = 50, thr =1, thr_slope = 0.5, plotBool = False)
         plt.plot(x/np.std(x), label = 'Original')
         plt.plot(x_ker, alpha = 0.2, label = 'Convolved')
         for on in ons_new:
-            plt.axvline(x = on, color = 'g', linestyle = ':', label = 'Onset', alpha = 0.5)
+            plt.axvline(x=on, color='g', linestyle=':', label='Onset',
+                        alpha=0.5)
         for off in offs_new:
-            plt.axvline(x = off, color = 'r', linestyle = ':', label = 'Offset', alpha = 0.5)
+            plt.axvline(x=off, color='r', linestyle=':', label='Offset',
+                        alpha=0.5)
         plt.legend()
     return np.array(ons_new), np.array(offs_new), np.array(signs)
+
+def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
+                                         motion_threshold_perc=None,
+                                         nImgs_for_back=1000, block_size=750,
+                                         search_radius=10, n_iter=2,
+                                         cropSize=140, midlines_nPts=50,
+                                         midlines_smooth=20, resume=False):
+    """
+    Process images using U net upto the extraction of tail angles and save to
+    an existing or new HDF file in a subfolder ('proc') of the image diretory
+    Parameters
+    ----------
+    imgDir: str
+        Directory of raw images
+    unet: Keras model
+        Trained U net model
+    ext: str
+        File extension of images in the specified directory
+    imgInds: array (n,) or None
+        Indices of select images to process
+    motion_threshold_perc: scalar (between 0-100) or None
+        If not None, then detects motion from images using estimate_motion and
+        uses this value as the percentile threshold for motion. This will
+        restrict processing to frames with motion and 100 frames around motion
+        on- and offset. A good value is 60
+    nImgs_for_back: int
+        At most this many images are used for computing background
+    block_size: int
+        Size of image blocks to process at once for easing memory load
+    search_radius: scalar
+        Parameter r in track.findFish
+    n_iter: int
+        Eponymous parameter in track.findFish
+    cropSize: int
+        Size to which probability images are to be cropped
+    midlines_nPts: int
+        Final length of midlines in points
+    midlines_smooth: int
+        Smoothing factor for midlines. See geom.smoothen_curve
+    resume: bool
+        Not yet implemented
+    Returns
+    -------
+    Path to HDF file storing relevant info
+    """
+    from apCode.volTools import dask_array_from_image_sequence
+    from apCode.FileTools import findAndSortFilesInDir, sublistsFromList
+    from apCode.util import timestamp
+    from apCode.hdf import createOrAppendToHdf
+    from apCode.behavior.headFixed import midlinesFromImages
+    from apCode import geom
+    from apCode.SignalProcessingTools import interp, levelCrossings
+
+    print('Reading images into dask array')
+    imgs = dask_array_from_image_sequence(imgDir, ext='bmp')
+    nImgs_total = imgs.shape[0]
+
+    print('Computing background')
+    bgd = track.computeBackground(imgs, n=nImgs_for_back).compute()
+
+    if motion_threshold_perc is not None:
+        motion = estimate_motion(imgs, bgd=bgd)
+        n_peri = 100
+        thresh_motion = np.percentile(motion, motion_threshold_perc)
+        ons, offs = levelCrossings(motion, thresh_motion)
+        inds_motion = []
+        for on, off in zip(ons, offs):
+            inds_motion.extend(np.arange(on - n_peri, off + n_peri))
+        inds_motion = np.array(inds_motion)
+        inds_motion = np.delete(inds_motion, np.where((inds_motion<0) |
+                               (inds_motion>len(motion))), axis=0)
+        inds_motion = np.unique(inds_motion)
+    else:
+        inds_motion = np.arange(imgs.shape[0])
+
+    if imgInds is None:
+        imgInds = np.arange(imgs.shape[0])
+    imgInds = np.intersect1d(imgInds, inds_motion)
+    imgs = imgs[imgInds]
+    p = np.round(100*len(imgInds)/nImgs_total)
+    print(f'{p} % of images being processed')
+    procDir = os.path.join(imgDir, 'proc')
+    if not os.path.exists(procDir):
+        os.mkdir(procDir)
+        fn_hFile = f'procData_{util.timestamp()}.h5'
+    else:
+        fn_hFile = findAndSortFilesInDir(imgDir, search_str='procData',
+                                         ext='h5')
+        if len(fn_hFile)>0:
+            fn_hFile = fn_hFile[-1]
+        else:
+            fn_hFile = f'procData_{timestamp()}.h5'
+    path_hFile = os.path.join(procDir, fn_hFile)
+    with h5py.File(os.path.join(path_hFile), mode='a') as hFile:
+        hFile = createOrAppendToHdf(hFile, 'img_background', bgd, verbose=True)
+        if motion_threshold_perc is not None:
+            hFile = createOrAppendToHdf(hFile, 'motion_from_imgs', motion,
+                                        verbose=True)
+        inds_blocks = sublistsFromList(imgInds, block_size)
+        ta, fp = [], []
+        inds_kept = []
+        for iBlock, inds_ in enumerate(inds_blocks):
+            print(f'Block # {iBlock+1}/{len(inds_blocks)}')
+            imgs_now = imgs[inds_].compute()
+            imgs_fish, imgs_prob = fish_imgs_from_raw(imgs_now, unet, bgd=bgd,
+                                                      verbose=0)
+            imgs_fish_grad = -imgs_now*imgs_fish
+            fp = track.findFish(imgs_fish_grad, back_img=None,
+                                r=search_radius, n_iter=n_iter)
+            try:
+                # In case fish was not detected in a few images
+                fp = interp.nanInterp1d(fp)
+            except:
+                # Fails for edge NaNs because extrapolation needed
+                pass
+            non_nan_inds = np.where(np.isnan(fp.sum(axis=1))==False)[0]
+            print('Cropping images...')
+            imgs_crop = track.cropImgsAroundFish(imgs_fish[non_nan_inds],
+                                                 fp, cropSize=cropSize)
+            pxls_sum = np.apply_over_axes(np.sum, imgs_crop, [1, 2]).flatten()
+            non_zero_inds = np.where(pxls_sum > 3)[0]
+            inds_kept_block = non_nan_inds[non_zero_inds]
+            print('Extracting midlines...')
+            midlines, inds_kept_midlines =\
+                track.midlines_from_binary_imgs(imgs_crop[inds_kept_block],
+                                                n_pts=midlines_nPts,
+                                                smooth=midlines_smooth)
+            inds_kept_block = inds_kept_block[inds_kept_midlines]
+            frameInds_kept = np.array(inds_)[inds_kept_block]
+            inds_kept.extend(frameInds_kept)
+
+            print('Computing tail angles...')
+            kappas = track.curvaturesAlongMidline(midlines, n=midlines_nPts)
+            tailAngles = np.cumsum(kappas, axis=0)
+            keyVals = [('imgs_fish_crop', imgs_crop), ('imgs_prob', imgs_prob),
+                       ('fishPos', fp), ('midlines', midlines.T),
+                       ('tailAngles', tailAngles.T),
+                       ('frameInds_processed', frameInds_kept)]
+            for key, val in keyVals:
+                if (key in hFile) & (iBlock==0):
+                    del hFile['key']
+                else:
+                    hFile = createOrAppendToHdf(hFile, key, val, verbose=True)
+    return hFilePath
 
 class track():
     import apCode.volTools as volt
@@ -1921,8 +2362,8 @@ class track():
             r.append(np.corrcoef(c_flat[:-1],c_flat[1:])[0,1])
         return np.array(r)
 
-    def computeBackground(imgDir,n = 1000, ext= 'bmp', n_jobs = 32, verbose = 0,
-                      override_and_save = True):
+    def _computeBackground(imgDir, n=1000, ext= 'bmp', n_jobs=32, verbose=0,
+                           override_and_save=True, func='mean'):
         """
         Given the path to an image directory, reads uniformly spaced images and returns
         the average image, which can be used an a background image. Also saves this
@@ -1940,24 +2381,27 @@ class track():
         verbose: scalar
             Verbosity of output during parallel processing
         override_and_save: Boolean
-            If True, saves background image, even if one already exists in the path
+            If True, saves background image, even if one already exists in the
+            path
+        func: str, 'mean', 'max', 'median' or 'min'
+            Function to use when computing background
         Returns
         -------
         img_back: array, (M,N)
             Background image
         """
-        import numpy as np
         import apCode.FileTools as ft
         from joblib import Parallel, delayed
         from skimage.io import imread, imsave
-        import os
         ### Check to see if there's already a background image
         procDir = os.path.join(imgDir,'proc')
         if not os.path.exists(procDir):
             os.mkdir(procDir)
 
         possible_backgrounds = ft.findAndSortFilesInDir(procDir,
-                                                        search_str = 'background', ext = ext)
+                                                        search_str='background',
+                                                        ext=ext)
+        func = eval(f'np.{func}')
         if (np.size(possible_backgrounds) == 0) | override_and_save:
             imgNames = ft.findAndSortFilesInDir(imgDir, ext = ext)
             n = np.min((n,len(imgNames))) # Number of images to use to compute background
@@ -1967,7 +2411,7 @@ class track():
                 foo = Parallel(n_jobs = n_jobs, verbose = verbose)(delayed(imread)(ip) for ip in imgPaths)
             else:
                 foo  = [imread(ip) for ip in imgPaths]
-            img_back = np.array(foo).mean(axis = 0)
+            img_back = func(np.array(foo), axis=0)
             imsave(os.path.join(procDir,'background.bmp'),img_back.astype('uint8'))
         else:
             img_back = imread(os.path.join(procDir,possible_backgrounds[0]))
@@ -1975,60 +2419,33 @@ class track():
 #            imsave(os.path.join(procDir,'background.bmp'),img_back.astype('uint8'))
         return img_back
 
-    def cropImgsAroundFish_old(I,fishPos, cropSize = 75, reshape = False):
-        '''
-        Crops an image stack around fish position coordinates
-        Parameters
-        ----------
-        I: 3D array, shape = (T,M,N)
-            Image stack with T images that needs to be cropped
-        fishPos: 2D array, shape = (T,2)
-            Fish position coordinates; 1st and 2nd columns are x- and y- coordinates
-            respectively
-        cropSize: Scalar
-            Size (length and breadth) of the cropped array
-        reshape: Boolean
-            If False, then all cropped images are of same size
-        Returns
-        -------
-        I_crop: 3D array, shape = (T,cropSize,cropSize)
-            Cropped image stack
+    def computeBackground(imgsOrDir, n=1000, ext= 'bmp', n_jobs=32, verbose=0,
+                          override_and_save=True, func='mean'):
+        """
+        See _computeBackground
+        """
+        if isinstance(imgsOrDir, str):
+            bgd = track._computeBackground(imgsOrDir, n=n, ext=ext,
+                                           n_jobs=n_jobs,
+                                           override_and_save=override_and_save,
+                                           func=func)
+        else:
+            imgs = imgsOrDir
+            nImgs = imgs.shape[0]
+            n=np.minimum(n, nImgs)
+            inds = np.unique(np.linspace(0, nImgs-1, n).astype(int))
+            bgd = imgs[inds].mean(axis=0)
+        return bgd
 
-        '''
-        import numpy as np
-        fishPos = np.fliplr(fishPos)
-        I_crop = []
-        for imgNum in range(np.shape(I)[0]):
-            img = I[imgNum]
-            if reshape == True:
-                x0 = np.max([0,fishPos[imgNum][0]-cropSize])
-                x1 = np.min([np.shape(I)[0],fishPos[imgNum][0]+cropSize])
-                y0 = np.max([0,fishPos[imgNum][1]-cropSize])
-                y1 = np.min([np.shape(I)[1],fishPos[imgNum][1]+cropSize])
-            else:
-                x0 = np.mod(fishPos[imgNum][0]-cropSize,np.shape(img)[0])
-                x1 = np.mod(fishPos[imgNum][0]+cropSize,np.shape(img)[0])
-                y0 = np.mod(fishPos[imgNum][1]-cropSize,np.shape(img)[1])
-                y1 = np.mod(fishPos[imgNum][1]+cropSize,np.shape(img)[1])
-            img = np.array(I[imgNum])
-            I_crop.append(img[x0:x1,y0:y1])
-        return I_crop
-
-    def cropImgsAroundFish(I,fishPos,cropSize = 80,keepSize = True,
-                           n_jobs = 32, verbose = 0, pad_type = 'nan'):
+    def cropImgsAroundFish(images, fishPos, **kwargs):
         """
         See volt.img.cropImgsAroundPoints
         """
-        import apCode.volTools as volt
-        import importlib
-        importlib.reload(volt)
-
-        out = volt.img.cropImgsAroundPoints(I,fishPos,cropSize = cropSize,
-                                       keepSize = keepSize, n_jobs = n_jobs,
-                                       verbose = verbose, pad_type = pad_type)
+        from apCode.volTools import img as _img
+        out = _img.cropImgsAroundPoints(images, fishPos, **kwargs)
         return out
 
-    def curvaturesAlongMidline(midlines, n = 50, n_jobs = 32, verbose = 0):
+    def curvaturesAlongMidline(midlines, n=50, n_jobs=32, verbose=0):
         """
         Returns curvatures along the midlines
         Parameters
@@ -2065,37 +2482,13 @@ class track():
             kappas = K
         return kappas
 
-    def findFish(imgOrPath, back_img = None, r = 10, n_iter = 2):
-        """
-        Returns x,y coordinates in an image of a fish's head centroid.
-        Parameters
-        ----------
-        imgOrPath: string or array (image) of shape (m,n)
-            Path to image or image array in which to find fish.If img
-            is given, but not background then assumes that fish pixels
-            are brighter than background.
-        back_img: array, (m,n)
-            Back ground image to remove using back_img-img. If None, then assumes
-            that background has been removed beforehand
-        r: scalar
-            Radius of a circular region around max-intensity pixel in the image.
-            The pixel intensities are used as weights to compute the fish head centroid
-            coordinates
-        Returns
-        -------
-        fp: array-like, (2,)
-            x-y coordinates (x,y) of fish's head centroid in image.
-
-        """
-        import numpy as np
-        import os
-        from skimage.io import imread
+    def _findFish(img, r=10, n_iter=2):
+        """See findFish"""
         from apCode.geom import circularAreaAroundPoint
-
-        def ff(img,seed,r):
+        def ff(img, seed, r):
             if np.any(seed == None):
                 seed = np.unravel_index(np.argmax(img), img.shape)
-            coords_around = circularAreaAroundPoint(seed,r).astype(int)
+            coords_around = circularAreaAroundPoint(seed, r).astype(int)
             for dim in range(len(coords_around)):
                 inds_del = np.where((coords_around[dim] < 0) | (coords_around[dim] >= img.shape[dim]))
                 coords_around = np.delete(coords_around, inds_del,axis = 1)
@@ -2104,24 +2497,55 @@ class track():
                 return np.ones((2,))*np.nan
             else:
                 wts = wts/wts.sum()
-                return np.dot(coords_around,wts)
-
-        if isinstance(imgOrPath,str):
-            if os.path.isfile(imgOrPath):
-                img= imread(imgOrPath)
-            else:
-                print('Input must either be a proper path to an image or an image...')
-                return
-        else:
-            img = imgOrPath
-
-        if not back_img is None:
-            img = back_img - img # Subtraction order makes fish pixels brighter than background
-
+                return np.dot(coords_around, wts)
         fp = None
         for n in range(n_iter):
-            fp = ff(img,fp,r)
-        return np.flipud(fp)
+            fp = ff(img, fp, r)
+        return fp[::-1]
+
+    def findFish(imgsOrDir, back_img='compute', r=10, n_iter=2, **back_kwargs):
+        """
+        Returns x,y coordinates in an image of a fish's head centroid.
+        Designed to work with fish images where eyes are the dimmest pixels,
+        but the algorithm uses the brightest point for estimating fish head
+        centroid, so if using imgs without background, flip pixel intensities
+        first so that eyes become the brightest points.
+        Parameters
+        ----------
+        imgOrPath: string or array (image) of shape (m,n)
+            Path to image or image array in which to find fish.If img
+            is given, but not background then assumes that fish pixels
+            are brighter than background.
+        back_img: array, (nRows, nCols), None, or 'compute'
+            Background image to remove using back_img-img. If None, then assumes
+            that background has been removed beforehand. If 'compute', then
+            computes from images using track.computeBackground
+        r: scalar
+            Radius of a circular region around max-intensity pixel in the image.
+            The pixel intensities are used as weights to compute the fish head
+            centroid coordinates
+        **back_kwargs: dict
+            Keywords for track.computeBackground
+        Returns
+        -------
+        fp: array-like, (2,)
+            x-y coordinates (x,y) of fish's head centroid in image.
+
+        """
+        from skimage.io import imread
+        import apCode.volTools as volt
+        if isinstance(imgsOrDir, str):
+            imgs = volt.dask_array_from_image_sequence(imgsOrDir)
+        else:
+            imgs = imgsOrDir
+        if back_img is not None:
+            if back_img is 'compute':
+                back_img = track.computeBackground(imgs, **back_kwargs)
+            imgs = back_img - imgs
+        fp = [dask.delayed(track._findFish)(img, r=r, n_iter=n_iter)
+              for img in imgs]
+        fp = dask.compute(*fp, scheduler='processes')
+        return np.array(fp)
 
     def fishImgsForBarycentricMidlines(I,I_prob, p_cutoff = 0.95, n_jobs = 32, verbose = 0):
         """
@@ -2149,6 +2573,49 @@ class track():
                 (delayed(fishImgForBarycentricMidline)(img, img_prob, p_cutoff)
                 for img, img_prob in zip(I, I_prob))
         return np.array(I_fish)
+
+    def find_and_crop_imgs_around_fish(imgsOrDir, ext='bmp', back_img=None,
+                                       r=10, n_iter=2, nImgs_for_back=1000,
+                                       **crop_kwargs):
+        """
+        Parameters
+        ----------
+        imgsOrDir: array, (nImgs, *imgDims) or str
+            Images or path to image directory
+        ext = 'str'
+            File extension for image files
+        back_img: array, (*imgDims), None, or 'compute'
+            Background image to subtract from images. If None, then no
+            subtraction. If 'compute', computes background using
+            track.computeBackground
+        r: int
+            Search radius for iterative estimation of fish head centroid. See
+            track.findFish
+        n_iter: int
+            Number of search iterations for finding fish. See track.findFish
+        nImgs_for_back: int
+            Number of images to use for background image computation. See
+            track.computeBackground
+        crop_kwargs: dict
+            Keyword arguments for track.cropImgsAroundFish
+        Returns
+        --------
+        out: dict
+            Dictionary with the following keys
+            fishPos: array, (nImgs, 2)
+                Fish position in images
+            imgs_crop: array, (nImgs, *imgDims)
+                Cropped images
+        """
+        if isinstance(imgsOrDir, str):
+            imgs=volt.dask_array_from_image_sequence(imgsOrDir, ext='bmp')
+        else:
+            imgs = imgsOrDir
+        fp = track.findFish(imgs, back_img=back_img, r=r, n_iter=2,
+                            n=nImgs_for_back)
+        imgs_crop = track.cropImgsAroundFish(imgs, fp, **crop_kwargs)
+        out = dict(fishPos=fp, imgs_crop=imgs_crop)
+        return out
 
     def fishImgsForMidline(I_raw, I_prob, filt_size=1, crop_size = None, n_jobs = 32,
                            verbose = 0, nThr = None, method = 'otsu'):
@@ -2387,7 +2854,37 @@ class track():
         M[inds_nan] = M_extrap[inds_nan]
         return M, M_extrap
 
-    def midlinesFromImages(images, smooth = 20, n = 50, n_jobs = 32, verbose = 0, orientMidlines = True):
+    def midlines_from_binary_imgs(imgs, n_pts=50, smooth=20,
+                                  orientMidlines=True):
+        """
+        Get smoothened and length-adjusted midlines from binary fish images
+        Parameters
+        ----------
+        imgs: array, (nImgs, *imgDims)
+            Binary images
+        n_pts: int
+            Number of points on the midline
+        smooth: scalar
+            Curve smoothing factor. geom.smoothen_curve
+            """
+        from apCode import geom
+        from apCode.behavior.headFixed import midlinesFromImages
+        midlines = midlinesFromImages(imgs, orientMidlines=orientMidlines)[0]
+        mLens = np.array([len(ml) for ml in midlines])
+        inds_kept = np.where(mLens>=6)[0]
+        # midlines_interp = geom.interpolateCurvesND(midlines[inds_kept],
+        #                                            mode='2D', N=n_pts)
+        midlines_interp = [dask.delayed(geom.interpolate_curve)(ml, n=n_pts)
+                           for ml in midlines[inds_kept]]
+        midlines_interp= [dask.delayed(geom.smoothen_curve)(ml, smooth_fixed=smooth)
+                          for ml in midlines_interp]
+        midlines_interp = dask.compute(*midlines_interp)
+        midlines_interp = np.array(midlines_interp)
+        # midlines_interp = geom.equalizeCurveLens(midlines_interp)
+        return midlines_interp, inds_kept
+
+    def midlinesFromImages(images, smooth=20, n=50, n_jobs=32, verbose=0,
+                           orientMidlines=True):
         """
         Returns midlines from fish images generated by fishImgsForMidline
         Parameters

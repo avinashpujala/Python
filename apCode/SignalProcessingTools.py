@@ -543,23 +543,26 @@ class interp():
         Interpolates a 1d signal that has NaN values in it
         Parameters
         ----------
-        x: array, (N,)
+        x: array, (nPts[, nSignals])
             Timeseries signal
         kind: scalar
             Type of interpolation. See scipy.interpolate.interp1d
 
         Returns
         -------
-        xx: array, (N,)
-            Interpolated signal without NaNs.
+        x_interp: array, (nPts[, nSignals])
+            Interpolated signal(s) without NaNs.
         """
         import numpy as np
         from scipy.interpolate import interp1d
-        nonNanInds = np.where(np.isnan(x) == False)[0]
+        if np.ndim(x)==1:
+            nonNanInds = np.where(np.isnan(x) == False)[0]
+        else:
+            nonNanInds = np.where(np.isnan(x.sum(axis=1))==False)[0]
         tt = np.linspace(0, 1, len(x))
         t_ = tt[nonNanInds]
         x_ = x[nonNanInds]
-        xx = interp1d(t_, x_, kind=kind)(tt)
+        xx = interp1d(t_, x_, kind=kind, axis=0)(tt)
         return xx
 
     def downsample_and_interp2d(X, ds_ratio=(0.5, 0.5), **kwargs):
@@ -624,11 +627,13 @@ def levelCrossings(x, thr=0):
     thr - Threshold for crossing
     """
     import numpy as np
-    inds = []
-    inds.append(np.where((x[0:-1] < thr) & (x[1:] > thr))[0])
-    inds.append(np.where((x[0:-1] > thr) & (x[1:] < thr))[0])
-    return inds
-
+    on = np.where((x[0:-1] < thr) & (x[1:] > thr))[0]
+    off = np.where((x[0:-1] > thr) & (x[1:] < thr))[0]
+    if on[0] > off[0]:
+        on = np.insert(on, 0, 0)
+    if off[-1] < on[-1]:
+        off = np.insert(len(x),0, off)
+    return on, off
 
 class linalg():
     def angleBetweenVecs(v1, v2):
