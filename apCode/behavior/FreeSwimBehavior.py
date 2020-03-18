@@ -13,65 +13,7 @@ from dask.diagnostics import ProgressBar
 sys.path.append(r'v:/code/python/code')
 
 
-def alignSignalsByOnset_old(signals, startSignalInd=0, nPre=30,
-                            padType='edge'):
-    """
-    Given a list of signals, returns a matrix of aligned signals
-    Parameters
-    ----------
-    signals: list
-        List of signals
-    startSignalInd: integer
-        Index of signal to use as the starting reference signal
-    nPre: integer
-        Number of pre-onset points to keep in each signal
-    padType: string
-        'zero'|'edge'
-        If 'zero', then zero pads signals, else edge pads.
-
-    """
-    if not isinstance(signals, list):
-        signals = list(signals)
-    sigLens = np.array([len(s) for s in signals])
-    sig_mean = np.zeros((sigLens.max(),))
-    s = signals[startSignalInd]
-    sig_mean[:len(s)] = s
-    S = np.zeros((sigLens.max(),len(signals)))
-    padLens,shifts,signs = [np.zeros((len(signals),)) for _ in range(3)]
-    padInds = []
-    indVec = np.arange(sigLens.max())
-    for count, s in enumerate(signals):
-        foo = matchByOnset(sig_mean,s, nPre = 0, padType = padType)
-        padLens[count] = foo['padLens'][1]
-        shifts[count] = foo['shifts'][1]+nPre
-        signs[count] = foo['signs'][1]
-        indVec_now = np.roll(indVec,int(shifts[count]))
-        padInds.append(indVec_now[sigLens.max()-int(padLens[count]):])
-        S[:len(foo['signals'][:,1]),count] = np.roll(foo['signals'][:,1],nPre)
-        sig_mean = np.mean(S[:,:count+1],axis = 1)
-    mu = np.mean(S,axis = 1)
-    c = np.array([np.corrcoef(mu,s)[0,1] for s in S.T])
-    out = {'signals': np.array(S), 'padLens': padLens.astype(int),'shifts': shifts.astype(int),
-           'signs': signs,'correlations': c,'nPre': nPre,'padType': padType,
-           'padInds':padInds}
-    def transform(out,signals, padType = None):
-        if padType == None:
-            padType = out['padType']
-        signals_new = []
-        for count, s in enumerate(signals):
-            if padType == 'edge':
-                foo = np.pad(s,pad_width = (0,out['padLens'][count]),
-                             mode = 'edge')
-            else:
-                foo = np.pad(s,pad_width = (0,out['padLens'][count]),
-                             mode = 'constant', constant_values = (0,0))
-            foo = out['signs'][count]*np.roll(foo,out['shifts'][count])
-            signals_new.append(foo)
-        return np.array(signals_new).T
-    out['transform'] = transform
-    return out
-
-def alignSignalsByOnset(signals, startSignalInd = 0, padType = 'edge'):
+def alignSignalsByOnset(signals, startSignalInd=0, padType='edge'):
     """
     Given a list of signals, returns a matrix of aligned signals
     Parameters
@@ -93,26 +35,23 @@ def alignSignalsByOnset(signals, startSignalInd = 0, padType = 'edge'):
     maxLen = sigLens.max()
     s = signals[startSignalInd]
     if padType == 'edge':
-        sig_mean = np.pad(s,pad_width = (0,maxLen-len(s)),mode = 'edge')
+        sig_mean = np.pad(s, pad_width=(0, maxLen-len(s)), mode='edge')
     else:
-        sig_mean = np.pad(s, pad_width = (0,maxLen-len(s)), mode = 'constant',
-                          constant_values = (0,0))
+        sig_mean = np.pad(s, pad_width=(0, maxLen-len(s)), mode='constant',
+                          constant_values=(0, 0))
 
-    S = np.zeros((maxLen,len(signals)))
-    padLens,signs = [],[]
+    S = np.zeros((maxLen, len(signals)))
+    padLens, signs = [], []
     for count, s in enumerate(signals):
-        foo = matchByOnset(sig_mean,s,padType = padType)
-        pl= foo['padLens']
-        foo['signals'] = np.delete(foo['signals'],np.arange(pl[0,0]),axis = 0)
-        #lenDiff = maxLen-np.shape(foo['signals'])[0]
-        #pl = foo['padLens'][1]
-        #pl[1] = pl[1]+lenDiff
-        foo['signals'] = foo['signals'][:maxLen,:]
+        foo = matchByOnset(sig_mean, s, padType=padType)
+        pl = foo['padLens']
+        foo['signals'] = np.delete(foo['signals'], np.arange(pl[0, 0]), axis=0)
+        foo['signals'] = foo['signals'][:maxLen, :]
         padLens.append(pl)
         signs.append(foo['signs'][1])
-        S[:len(foo['signals'][:,1]),count] = foo['signals'][:,1]
-        sig_mean = np.mean(S[:,:count+1],axis = 1)
-    mu = np.mean(S,axis = 1)
+        S[:len(foo['signals'][:,1]),count] = foo['signals'][:, 1]
+        sig_mean = np.mean(S[:,:count+1], axis=1)
+    mu = np.mean(S, axis=1)
 
     c = np.array([np.corrcoef(mu,s)[0,1] for s in S.T])
     out = {'signals': np.array(S), 'padLens': padLens,'signs': signs,
@@ -166,8 +105,8 @@ def alignSignalsByOnset(signals, startSignalInd = 0, padType = 'edge'):
     return out
 
 
-def analyzeDistribution(x, comps = 5, plotBool = True, xLabel = '', distType ='kde',
-                        choose_comps = True):
+def analyzeDistribution(x, comps=5, plotBool=True, xLabel='', distType ='kde',
+                        choose_comps=True):
     """
     When given some 1D data, returns the histogram,the components
     of the Gaussian Mixture Model fit to the data, as well as the handle to the
@@ -2070,30 +2009,28 @@ def sortIntoTrls(trlDir, trlSize, trlLists = [], dstLists = [], ext = 'bmp', chu
         if not os.path.exists(dst):
             os.mkdir(dst)
         for item in currList:
-            sh.move(os.path.join(trlDir,item),dst)
-
+            sh.move(os.path.join(trlDir,item), dst)
     print(int(time.time()-tic), 'sec')
 
 
-def sublistsFromList(inputList,chunkSize):
-    '''
-    Given a list, chunks it into sizes specified and returns the chunks as items
-        in a new list
-    '''
-    import numpy as np
-    subList,supList = [],[]
+def sublistsFromList(inputList, chunkSize):
+    """ Given a list, chunks it into sizes specified and returns the chunks as
+    items in a new list """
+    subList, supList = [], []
     for itemNum, item in enumerate(inputList):
-        if np.mod(itemNum+1,chunkSize)==0:
+        if np.mod(itemNum+1, chunkSize) == 0:
             subList.append(item)
             supList.append(subList)
             subList = []
         else:
-             subList.append(item)
+            subList.append(item)
     supList.append(subList)
-    supList = list(filter(lambda x: len(x)!=0, supList)) # Remove zero-length lists
+    # --> Remove zero-length lists
+    supList = list(filter(lambda x: len(x) != 0, supList))
     return supList
 
-def swimOnAndOffsets(x, ker_len = 50, thr =1, thr_slope = 0.5, plotBool = False):
+
+def swimOnAndOffsets(x, ker_len=50, thr=1, thr_slope=0.5, plotBool=False):
     """
     Given a timeseries containing swim episodes, returns the estimated onsets
     and offsets of the swims
@@ -2109,11 +2046,12 @@ def swimOnAndOffsets(x, ker_len = 50, thr =1, thr_slope = 0.5, plotBool = False)
         not noise in the smoothed timeseries (i.e., after convolution of the
         timeseries with the causal kernel).
     thr_slope: scalar
-        Threshold in units of std when looking at the derivative of the smoothed
+        Threshold in units of std when looking at the derivative of the
+        smoothed
         timeseries
     plotBool = boolean
-        If True, the plots std-normalized signal and convolved signal with overlaid on
-        and offsets
+        If True, the plots std-normalized signal and convolved signal with
+        overlaid on- and offsets
     Returns
     -------
     ons: (n,) array
@@ -2125,62 +2063,58 @@ def swimOnAndOffsets(x, ker_len = 50, thr =1, thr_slope = 0.5, plotBool = False)
         signals, for say plotting or averaging.
     """
     import apCode.SignalProcessingTools as spt
-    import numpy as np
     import matplotlib.pyplot as plt
-    ker = spt.gaussFun(np.arange(2*ker_len),mu=0, sigma=1)
-    #ker = np.exp(-np.linspace(0,1,2*ker_len)*4)
+
+    ker = spt.gaussFun(np.arange(2*ker_len), mu=0, sigma=1)
     ind_max = np.argmax(ker)
     ker = ker[ind_max:int(len(ker/2))]
-    #ker = ker[ind_max:]
     ker = ker/np.sum(ker)
-    x_ker = np.convolve(np.abs(x),ker, mode = 'full')
+    x_ker = np.convolve(np.abs(x), ker, mode='full')
     x_ker = x_ker[:len(x)]
     x_ker = x_ker/np.std(x_ker)
-    ons,offs = spt.levelCrossings(x_ker,thr=thr)
-    #print(ons,offs)
-    epLens = np.array([off-on for on, off in zip(ons,offs)])
+    ons, offs = spt.levelCrossings(x_ker, thr=thr)
+    epLens = np.array([off-on for on, off in zip(ons, offs)])
 
-    #--- Discard brief excursions that are unlikely to be swims
+    # --- Discard brief excursions that are unlikely to be swims
     tooShortInds = np.where(epLens < ker_len/2)[0]
-    ons = np.delete(ons,tooShortInds)
-    offs = np.delete(offs,tooShortInds)
+    ons = np.delete(ons, tooShortInds)
+    offs = np.delete(offs, tooShortInds)
 
     dx_ker = np.gradient(x_ker)
     dx_ker = dx_ker/np.std(dx_ker)
     ddx_ker = np.gradient(dx_ker)
     ddx_ker = ddx_ker/np.std(ddx_ker)
     pks_up = spt.findPeaks(ddx_ker, pol=1)[0]
-    pks_down = spt.findPeaks(ddx_ker, pol = -1)[0]
+    pks_down = spt.findPeaks(ddx_ker, pol=-1)[0]
 
-    if (np.size(ons)==1) & (np.size(offs)==0):
-        #print('No offsets, setting to signal end.')
+    if (np.size(ons) == 1) & (np.size(offs) == 0):
         offs = [len(x)-1]
-    elif (np.size(ons)==0) & (np.size(offs)==1):
-        #print('No onsets, setting to singal start.')
+    elif (np.size(ons) == 0) & (np.size(offs) == 1):
+
         ons = [0]
-    ons_new, offs_new, signs = [],[],[]
+    ons_new, offs_new, signs = [], [], []
     for on, off in zip(ons, offs):
-        if np.size(off)==0:
+        if np.size(off) == 0:
             off = len(x)
-        elif np.size(on)==0:
+        elif np.size(on) == 0:
             on = 0
 
-        pks_before = pks_up[np.where(pks_up<=on)[0]]
-        if np.size(pks_before)==0:
+        pks_before = pks_up[np.where(pks_up <= on)[0]]
+        if np.size(pks_before) == 0:
             ons_new.append(on)
         else:
             ons_new.append(pks_before[-1])
 
-        pks_after = pks_down[np.where(pks_down>=off)[0]]
-        if np.size(pks_after)==0:
+        pks_after = pks_down[np.where(pks_down >= off)[0]]
+        if np.size(pks_after) == 0:
             offs_new.append(off)
         else:
             offs_new.append(pks_after[0])
         signs.append(np.sign(np.gradient(x)[on]))
 
     if plotBool:
-        plt.plot(x/np.std(x), label = 'Original')
-        plt.plot(x_ker, alpha = 0.2, label = 'Convolved')
+        plt.plot(x/np.std(x), label='Original')
+        plt.plot(x_ker, alpha=0.2, label='Convolved')
         for on in ons_new:
             plt.axvline(x=on, color='g', linestyle=':', label='Onset',
                         alpha=0.5)
@@ -2189,6 +2123,7 @@ def swimOnAndOffsets(x, ker_len = 50, thr =1, thr_slope = 0.5, plotBool = False)
                         alpha=0.5)
         plt.legend()
     return np.array(ons_new), np.array(offs_new), np.array(signs)
+
 
 def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
                                          motion_threshold_perc=None,
@@ -2238,8 +2173,6 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
     from apCode.FileTools import findAndSortFilesInDir, sublistsFromList
     from apCode.util import timestamp
     from apCode.hdf import createOrAppendToHdf
-    from apCode.behavior.headFixed import midlinesFromImages
-    from apCode import geom
     from apCode.SignalProcessingTools import interp, levelCrossings
 
     print('Reading images into dask array')
@@ -2258,8 +2191,9 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
         for on, off in zip(ons, offs):
             inds_motion.extend(np.arange(on - n_peri, off + n_peri))
         inds_motion = np.array(inds_motion)
-        inds_motion = np.delete(inds_motion, np.where((inds_motion<0) |
-                               (inds_motion>len(motion))), axis=0)
+        inds_motion = np.delete(inds_motion, np.where((inds_motion < 0) |
+                                                      (inds_motion >
+                                                       len(motion))), axis=0)
         inds_motion = np.unique(inds_motion)
     else:
         inds_motion = np.arange(imgs.shape[0])
@@ -2273,22 +2207,25 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
     procDir = os.path.join(imgDir, 'proc')
     if not os.path.exists(procDir):
         os.mkdir(procDir)
-        fn_hFile = f'procData_{util.timestamp()}.h5'
+        fn_hFile = f'procData_{timestamp()}.h5'
     else:
         fn_hFile = findAndSortFilesInDir(imgDir, search_str='procData',
                                          ext='h5')
-        if len(fn_hFile)>0:
+        if len(fn_hFile) > 0:
             fn_hFile = fn_hFile[-1]
         else:
             fn_hFile = f'procData_{timestamp()}.h5'
     path_hFile = os.path.join(procDir, fn_hFile)
     with h5py.File(os.path.join(path_hFile), mode='a') as hFile:
+        if 'img_background' in hFile:
+            del hFile['img_background']
         hFile = createOrAppendToHdf(hFile, 'img_background', bgd, verbose=True)
         if motion_threshold_perc is not None:
+            if 'motion_from_imgs' in hFile:
+                del hFile['motion_from_imgs']
             hFile = createOrAppendToHdf(hFile, 'motion_from_imgs', motion,
                                         verbose=True)
         inds_blocks = sublistsFromList(imgInds, block_size)
-        ta, fp = [], []
         inds_kept = []
         for iBlock, inds_ in enumerate(inds_blocks):
             print(f'Block # {iBlock+1}/{len(inds_blocks)}')
@@ -2301,10 +2238,10 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
             try:
                 # In case fish was not detected in a few images
                 fp = interp.nanInterp1d(fp)
-            except:
+            except 'Blah':
                 # Fails for edge NaNs because extrapolation needed
                 pass
-            non_nan_inds = np.where(np.isnan(fp.sum(axis=1))==False)[0]
+            non_nan_inds = np.where(np.isnan(fp.sum(axis=1)) == False)[0]
             print('Cropping images...')
             imgs_crop = track.cropImgsAroundFish(imgs_fish[non_nan_inds],
                                                  fp, cropSize=cropSize)
@@ -2323,51 +2260,57 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
             print('Computing tail angles...')
             kappas = track.curvaturesAlongMidline(midlines, n=midlines_nPts)
             tailAngles = np.cumsum(kappas, axis=0)
+            print(f'midlines shape = {midlines.shape}')
             keyVals = [('imgs_fish_crop', imgs_crop), ('imgs_prob', imgs_prob),
-                       ('fishPos', fp), ('midlines', midlines.T),
+                       ('fishPos', fp), ('midlines', midlines),
                        ('tailAngles', tailAngles.T),
                        ('frameInds_processed', frameInds_kept)]
             for key, val in keyVals:
-                if (key in hFile) & (iBlock==0):
+                if (key in hFile) & (iBlock == 0):
                     del hFile['key']
                 else:
                     hFile = createOrAppendToHdf(hFile, key, val, verbose=True)
-    return hFilePath
+    return path_hFile
+
 
 class track():
     import apCode.volTools as volt
-    def assessTracking(curve, nFramesInTrl = 750, responseWin = (0,300)):
+
+    def assessTracking(curve, nFramesInTrl=750, responseWin=(0, 300)):
         """
         Parameters
         ----------
         curve: array, (L,N)
-            Tail curvatures; L is number of points on fish's tail and N is total number of time points for experiment
+            Tail curvatures; L is number of points on fish's tail and N is
+            total number of time points for experiment
         nFramesInTrl: scalar
             Number of frames in each trial.
         Returns
         -------
         r: (M,)
-            A vector of M values wherein m is the total number of trials, and each value is a measure of how
-            good the tracking for a given trial is. Computed based on lag-1 autocorrelation.
+            A vector of M values wherein m is the total number of trials, and
+            each value is a measure of how good the tracking for a given trial
+            is. Computed based on lag-1 autocorrelation.
         """
         import numpy as np
         import apCode.FileTools as ft
         curve_trl = ft.sublistsFromList(curve.T, nFramesInTrl)
-        r =[]
+        r = []
         for c in curve_trl:
-            if responseWin == None:
+            if responseWin is None:
                 c_flat = np.array(c).T.flatten()
             else:
-                c_flat = np.array(c).T.flatten()[np.arange(responseWin[0], responseWin[-1])]
-            r.append(np.corrcoef(c_flat[:-1],c_flat[1:])[0,1])
+                c_flat = np.array(c).T.flatten()[np.arange(responseWin[0],
+                                                           responseWin[-1])]
+            r.append(np.corrcoef(c_flat[:-1], c_flat[1:])[0, 1])
         return np.array(r)
 
-    def _computeBackground(imgDir, n=1000, ext= 'bmp', n_jobs=32, verbose=0,
+    def _computeBackground(imgDir, n=1000, ext='bmp', n_jobs=32, verbose=0,
                            override_and_save=True, func='mean'):
         """
-        Given the path to an image directory, reads uniformly spaced images and returns
-        the average image, which can be used an a background image. Also saves this
-        background image in the 'proc' subdirectory.
+        Given the path to an image directory, reads uniformly spaced images
+        and returns the average image, which can be used an a background
+        image. Also saves this background image in the 'proc' subdirectory.
         Parameters
         ----------
         imgDir: string
@@ -2697,8 +2640,6 @@ class track():
             pixel length = 0.05, and approx fish length = 5mm, so approx fish length
             in pixel units is int(5/0.05)
         """
-        import numpy as np
-#        import apCode.volTools as volt
         from skimage.measure import regionprops, label
         from skimage.morphology import thin
         import apCode.geom as geom
@@ -2758,10 +2699,13 @@ class track():
             print('No blobs in image')
             return img_bool.astype('uint8')
 
+
     def interpolateMidlines(midlines, q = 90, kind:str = 'cubic', N:int = 100):
         """
-        When given midlines returned by FreeSwimBehavior.track.midlinesFromImages, returns an array of
-        midlines adjusted for the most common length and interpolated to fill NaNs
+        When given midlines returned by
+        FreeSwimBehavior.track.midlinesFromImages, returns an array of
+        midlines adjusted for the most common length and interpolated to fill
+        NaNs
         Parameters
         ----------
         midlines: list (T,)
@@ -2770,12 +2714,14 @@ class track():
         kind = string
             Kind of interpolation to use; see scipy.interpolate.interp1d
         fill_value: float, None (default), or "extrapolate"
-            Values to fill with when outside the convex hull of the interpolation
+            Values to fill with when outside the convex hull of the
+            interpolation
 
         Returns
         -------
         midlines_interp, midlines_extrap: arrays,  (T, N, 2)
-            Interpolated array of midlines (midlines_interp) and length-adjusted (by extrapolation)
+            Interpolated array of midlines (midlines_interp) and
+            length-adjusted (by extrapolation)
             array of midlines respectively
 
         """
@@ -2783,76 +2729,14 @@ class track():
         from scipy.interpolate import griddata
         from apCode.geom import interpExtrapCurves
 
-        def interp2D(C,kind):
-            coords = np.where(np.isnan(C)==False)
+        def interp2D(C, kind):
+            coords = np.where(np.isnan(C) == False)
             gy, gx = np.meshgrid(np.arange(C.shape[1]), np.arange(C.shape[0]))
-            C_interp = griddata(coords, C[coords],(gx, gy), method = kind)
+            C_interp = griddata(coords, C[coords], (gx, gy), method=kind)
             return C_interp
-        M =interpExtrapCurves(midlines,q = q, kind = kind, N = N)
-        M_interp= np.apply_along_axis(interp2D,1,M,kind)
+        M = interpExtrapCurves(midlines, q=q, kind=kind, N=N)
+        M_interp = np.apply_along_axis(interp2D, 1, M, kind)
         return M_interp
-
-    def interpolateMidlines_old(midlines, n_jobs = 32, verbose = 0, kind = 'cubic', fill_value = None):
-        """
-        When given midlines returned by FreeSwimBehavior.track.midlinesFromImages, returns an array of
-        midlines adjusted for the most common length and interpolated to fill NaNs
-        Parameters
-        ----------
-        midlines: list (T,)
-            T midlines of varying length
-        n_jobs, verbose: See Parallel, delayed from joblib
-        kind = string
-            Kind of interpolation to use; see scipy.interpolate.interp1d
-        fill_value: float, None (default), or "extrapolate"
-            Values to fill with when outside the convex hull of the interpolation
-
-        Returns
-        -------
-        midlines_interp, midlines_extrap: arrays,  (T, N, 2)
-            Interpolated array of midlines (midlines_interp) and length-adjusted (by extrapolation)
-            array of midlines respectively
-
-        """
-        import numpy as np
-        from scipy.interpolate import interp1d, griddata
-        from joblib import Parallel, delayed
-        from apCode.SignalProcessingTools import stats
-
-        ### Custom functions
-        dists = lambda ml: np.insert(np.cumsum(np.sum(np.diff(ml,axis = 0)**2,axis = 1)**0.5),0,0)
-        interp_fit = lambda dml, ml, x, kind, bounds_error, axis, fill_value: interp1d(dml,ml,kind = kind, bounds_error = bounds_error, axis = axis, fill_value = fill_value)(x)
-        totalDeviations = lambda midlines: np.sum(np.sum(np.diff(midlines,axis =0)**2,axis = 2)**0.5,axis = 1)
-        ### Default inputs
-        bounds_error, axis = False, 0
-        if fill_value == None:
-            fill_value = np.nan
-
-        dMidlines = np.array(Parallel(n_jobs= n_jobs, verbose =0)(delayed(dists)(ml) for ml in midlines))
-        midLens, dMids= zip(*[(_[-1], np.mean(np.diff(_))) for _ in dMidlines])
-        midLens, dMids = np.array(midLens), np.array(dMids)
-        x_50 = stats.valAtCumProb(midLens, func = 'lin', cumProb = 0.5, plotBool = False)
-        x = np.arange(0, x_50, np.min(dMids))
-#        print('Midlines: mean length = {}, length for 50 % = {}'.format(np.mean(midLens), x_50))
-        M_extrap = np.array(Parallel(n_jobs = n_jobs, verbose = verbose)\
-                         (delayed(interp_fit)(dml,ml,x,kind,bounds_error, axis, fill_value)\
-                          for dml, ml in zip(dMidlines, midlines)))
-        X,Y = M_extrap[...,0], M_extrap[...,1]
-        gy, gx = np.meshgrid(np.arange(X.shape[1]), np.arange(X.shape[0]))
-        totDev = totalDeviations(M_extrap)
-        thr = stats.valAtCumProb(totDev, func = 'lin', plotBool = False)
-        inds_keep = np.where(totDev < thr)[0]
-#        print("{}/{} midlines interpolated".format(len(midlines)-len(inds_keep), len(midlines)))
-        M_bool = X*0
-        M_bool[inds_keep,...] = 1
-        coords = np.where(M_bool==1)
-        X_interp = griddata(coords, X[coords],(gx, gy), method = kind)
-        Y_interp = griddata(coords, Y[coords],(gx, gy), method = kind)
-        M = M_extrap*0
-        M[...,0] = X_interp
-        M[...,1] = Y_interp
-        inds_nan = np.where(np.isnan(M))
-        M[inds_nan] = M_extrap[inds_nan]
-        return M, M_extrap
 
     def midlines_from_binary_imgs(imgs, n_pts=50, smooth=20,
                                   orientMidlines=True):
@@ -2871,13 +2755,14 @@ class track():
         from apCode.behavior.headFixed import midlinesFromImages
         midlines = midlinesFromImages(imgs, orientMidlines=orientMidlines)[0]
         mLens = np.array([len(ml) for ml in midlines])
-        inds_kept = np.where(mLens>=6)[0]
+        inds_kept = np.where(mLens >= 6)[0]
         # midlines_interp = geom.interpolateCurvesND(midlines[inds_kept],
         #                                            mode='2D', N=n_pts)
         midlines_interp = [dask.delayed(geom.interpolate_curve)(ml, n=n_pts)
                            for ml in midlines[inds_kept]]
-        midlines_interp= [dask.delayed(geom.smoothen_curve)(ml, smooth_fixed=smooth)
-                          for ml in midlines_interp]
+        midlines_interp = [dask.delayed(geom.smoothen_curve)
+                           (ml, smooth_fixed=smooth)
+                           for ml in midlines_interp]
         midlines_interp = dask.compute(*midlines_interp)
         midlines_interp = np.array(midlines_interp)
         # midlines_interp = geom.equalizeCurveLens(midlines_interp)
