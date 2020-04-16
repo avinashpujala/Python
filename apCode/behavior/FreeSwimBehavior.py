@@ -559,7 +559,7 @@ def filterFishData(data,dt= 1./1000,Wn=100, btype = 'low', \
     return data_flt
 
 
-def fish_imgs_from_raw(imgs, unet, bgd=None, prob_thr=0.1, diam=11,
+def fish_imgs_from_raw(imgs, unet, bgd=None, prob_thr=0.55, diam=11,
                        sigma_space=1, method='fast', **unet_predict_kwargs):
     """
     Returns prob and fish blob binary images when given raw images and a
@@ -594,19 +594,19 @@ def fish_imgs_from_raw(imgs, unet, bgd=None, prob_thr=0.1, diam=11,
         mask = (img_prob2 > prob_thr).astype('uint8')
         lbls = label(mask)
         regions = regionprops(lbls)
-        if len(regions)>1:
+        if len(regions) > 1:
             perimeters = np.array([region.perimeter for region in regions])
             ind = np.argmax(perimeters)
             region = regions[ind]
-        elif len(regions)==1:
+        elif len(regions) == 1:
             region = regions[0]
         else:
             return img_prob
         cent = np.array(region.centroid)
         regions = regionprops(label((img_prob > prob_thr).astype('uint8')))
-        if len(regions)>1:
-            cents = np.array([region.centroid for region in  regions])
-        elif len(regions)==1:
+        if len(regions) > 1:
+            cents = np.array([region.centroid for region in regions])
+        elif len(regions) == 1:
             cents = np.array(regions[0].centroid)
         else:
             return img_prob
@@ -614,24 +614,24 @@ def fish_imgs_from_raw(imgs, unet, bgd=None, prob_thr=0.1, diam=11,
         ind = np.argmin(dists)
         coords = regions[ind].coords
         img_fish = np.zeros_like(img_prob)
-        img_fish[coords[:, 0], coords[:, 1]]=1
+        img_fish[coords[:, 0], coords[:, 1]] = 1
         return img_fish
 
     def _fish_img_from_raw_fast(img_prob, img_raw, prob_thr):
         mask = (img_prob > prob_thr).astype('uint8')
         img_lbl = label(mask)
         regions = regionprops(img_lbl, -img_raw*img_prob)
-        if len(regions)>1:
+        if len(regions) > 1:
             max_ints = np.array([region.max_intensity for region in regions])
             ind = np.argmax(max_ints)
             region = regions[ind]
-        elif len(regions)==1:
+        elif len(regions) == 1:
             region = regions[0]
         else:
-            return img_prob
+            return (img_prob*0).astype('uint8')
         coords = region.coords
-        img_fish = np.zeros_like(img_prob)
-        img_fish[coords[:, 0], coords[:, 1]]=1
+        img_fish = np.zeros_like(img_prob, dtype='uint8')
+        img_fish[coords[:, 0], coords[:, 1]] = 1
         return img_fish
 
     imgs_prob = prob_images_with_unet(imgs, unet, **unet_predict_kwargs)
@@ -1987,10 +1987,10 @@ def sortIntoTrls(trlDir, trlSize, trlLists = [], dstLists = [], ext = 'bmp', chu
             for item_item in item:
                 foo = foo + str(item_item) + '-'
             foo = foo[:-1]
-            dstLists.append(os.path.join(trlDir,'Trl_' + foo))
+            dstLists.append(os.path.join(trlDir, 'Trl_' + foo))
 
-    ## Sublist files into trials
-    filesInDir_trl = sublistsFromList(filesInDir,trlSize)
+    # Sublist files into trials
+    filesInDir_trl = sublistsFromList(filesInDir, trlSize)
     tic = time.time()
     if type(trlLists[0]) is list:
         for trlListNum, trlList in enumerate(trlLists):
@@ -2001,15 +2001,16 @@ def sortIntoTrls(trlDir, trlSize, trlLists = [], dstLists = [], ext = 'bmp', chu
             if not os.path.exists(dst):
                 os.mkdir(dst)
             for item in currList:
-                sh.move(os.path.join(trlDir,item),dst)
+                sh.move(os.path.join(trlDir, item), dst)
     else:
         print('Moving the following trials', trlLists)
-        currList = [filesInDir_trl[item] for item in trlLists if np.intersect1d(item,trlLists)]
+        currList = [filesInDir_trl[item] for item in trlLists if
+                    np.intersect1d(item, trlLists)]
         dst = dstLists[trlListNum]
         if not os.path.exists(dst):
             os.mkdir(dst)
         for item in currList:
-            sh.move(os.path.join(trlDir,item), dst)
+            sh.move(os.path.join(trlDir, item), dst)
     print(int(time.time()-tic), 'sec')
 
 
@@ -2126,7 +2127,7 @@ def swimOnAndOffsets(x, ker_len=50, thr=1, thr_slope=0.5, plotBool=False):
 
 
 def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
-                                         motion_threshold_perc=None,
+                                         motion_thresh_perc=None,
                                          nImgs_for_back=1000, block_size=750,
                                          search_radius=10, n_iter=2,
                                          cropSize=140, midlines_nPts=50,
@@ -2144,7 +2145,7 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
         File extension of images in the specified directory
     imgInds: array (n,) or None
         Indices of select images to process
-    motion_threshold_perc: scalar (between 0-100) or None
+    motion_thresh_perc: scalar (between 0-100) or None
         If not None, then detects motion from images using estimate_motion and
         uses this value as the percentile threshold for motion. This will
         restrict processing to frames with motion and 100 frames around motion
@@ -2179,24 +2180,73 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
     imgs = dask_array_from_image_sequence(imgDir, ext='bmp')
     nImgs_total = imgs.shape[0]
 
-    print('Computing background')
-    bgd = track.computeBackground(imgs, n=nImgs_for_back).compute()
+    # Check for existing hdf file in path, else create
+    procDir = os.path.join(imgDir, 'proc')
+    openMode = 'r'
+    if not os.path.exists(procDir):
+        os.mkdir(procDir)
+        fn_hFile = f'procData_{timestamp()}.h5'
+        openMode = 'a'
+        print(f'procDir = {procDir}')
+    else:
+        fn_hFile = findAndSortFilesInDir(procDir, search_str='procData',
+                                         ext='h5')
+        if len(fn_hFile) > 0:
+            fn_hFile = fn_hFile[-1]
+        else:
+            fn_hFile = f'procData_{timestamp()}.h5'
+            openMode = 'a'
+    path_hFile = os.path.join(procDir, fn_hFile)
+    if openMode == 'r':
+        with h5py.File(path_hFile, mode=openMode) as hFile:
+            print('Reading img background...')
+            if 'img_background' in hFile:
+                bgd = hFile['img_background'][()]
+            else:
+                bgd = track.computeBackground(imgs, n=nImgs_for_back).compute()
+    else:
+        print('Computing background and appending to hdf...')
+        bgd = track.computeBackground(imgs, n=nImgs_for_back).compute()
+        with h5py.File(path_hFile, mode='a') as hFile:
+            hFile = createOrAppendToHdf(hFile, 'img_background', bgd,
+                                        verbose=True)
 
-    if motion_threshold_perc is not None:
-        motion = estimate_motion(imgs, bgd=bgd)
+    if motion_thresh_perc is not None:
+        if openMode == 'r':
+            with h5py.File(path_hFile, mode=openMode) as hFile:
+                if 'motion_from_imgs' in hFile:
+                    print('Reading motion info from hdf...')
+                    motion = np.array(hFile['motion_from_imgs'])
+                else:
+                    print('Estimating motion from images......')
+                    motion = estimate_motion(imgs, bgd=bgd)
+                    with h5py.File(path_hFile, mode='a') as hFile:
+                        h5py.create_dataset('motion_from_imgs', data=motion)
+        else:
+            print('Estimating motion from images...')
+            motion = estimate_motion(imgs, bgd=bgd)
+            with h5py.File(path_hFile, mode='a') as hFile:
+                h5py.create_dataset('motion_from_imgs', data=motion)
         n_peri = 100
-        thresh_motion = np.percentile(motion, motion_threshold_perc)
+        thresh_motion = np.percentile(motion, motion_thresh_perc)
         ons, offs = levelCrossings(motion, thresh_motion)
         inds_motion = []
         for on, off in zip(ons, offs):
-            inds_motion.extend(np.arange(on - n_peri, off + n_peri))
-        inds_motion = np.array(inds_motion)
-        inds_motion = np.delete(inds_motion, np.where((inds_motion < 0) |
-                                                      (inds_motion >
-                                                       len(motion))), axis=0)
+            inds_now = np.arange(on - n_peri, off + n_peri)
+            inds_motion.extend(inds_now)
         inds_motion = np.unique(inds_motion)
+        inds_motion = inds_motion[np.where((inds_motion >= 0) &
+                                           (inds_motion < len(motion)))]
     else:
         inds_motion = np.arange(imgs.shape[0])
+
+    with h5py.File(path_hFile, mode='a') as hFile:
+        if 'inds_motion' in hFile:
+            del hFile['inds_motion']
+        hFile.create_dataset('inds_motion', data=inds_motion)
+        if 'motion_thresh_perc' in hFile:
+            del hFile['motion_thresh_perc']
+        hFile.create_dataset('motion_thresh_perc', data=np.array([-1]))
 
     if imgInds is None:
         imgInds = np.arange(imgs.shape[0])
@@ -2204,72 +2254,54 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
     imgs = imgs[imgInds]
     p = np.round(100*len(imgInds)/nImgs_total)
     print(f'{p} % of images being processed')
-    procDir = os.path.join(imgDir, 'proc')
-    if not os.path.exists(procDir):
-        os.mkdir(procDir)
-        fn_hFile = f'procData_{timestamp()}.h5'
-    else:
-        fn_hFile = findAndSortFilesInDir(imgDir, search_str='procData',
-                                         ext='h5')
-        if len(fn_hFile) > 0:
-            fn_hFile = fn_hFile[-1]
-        else:
-            fn_hFile = f'procData_{timestamp()}.h5'
-    path_hFile = os.path.join(procDir, fn_hFile)
-    with h5py.File(os.path.join(path_hFile), mode='a') as hFile:
-        if 'img_background' in hFile:
-            del hFile['img_background']
-        hFile = createOrAppendToHdf(hFile, 'img_background', bgd, verbose=True)
-        if motion_threshold_perc is not None:
-            if 'motion_from_imgs' in hFile:
-                del hFile['motion_from_imgs']
-            hFile = createOrAppendToHdf(hFile, 'motion_from_imgs', motion,
-                                        verbose=True)
-        inds_blocks = sublistsFromList(imgInds, block_size)
-        inds_kept = []
-        for iBlock, inds_ in enumerate(inds_blocks):
-            print(f'Block # {iBlock+1}/{len(inds_blocks)}')
-            imgs_now = imgs[inds_].compute()
-            imgs_fish, imgs_prob = fish_imgs_from_raw(imgs_now, unet, bgd=bgd,
-                                                      verbose=0)
-            imgs_fish_grad = -imgs_now*imgs_fish
-            fp = track.findFish(imgs_fish_grad, back_img=None,
-                                r=search_radius, n_iter=n_iter)
-            try:
-                # In case fish was not detected in a few images
-                fp = interp.nanInterp1d(fp)
-            except 'Blah':
-                # Fails for edge NaNs because extrapolation needed
-                pass
-            non_nan_inds = np.where(np.isnan(fp.sum(axis=1)) == False)[0]
-            print('Cropping images...')
-            imgs_crop = track.cropImgsAroundFish(imgs_fish[non_nan_inds],
-                                                 fp, cropSize=cropSize)
-            pxls_sum = np.apply_over_axes(np.sum, imgs_crop, [1, 2]).flatten()
-            non_zero_inds = np.where(pxls_sum > 3)[0]
-            inds_kept_block = non_nan_inds[non_zero_inds]
-            print('Extracting midlines...')
-            midlines, inds_kept_midlines =\
-                track.midlines_from_binary_imgs(imgs_crop[inds_kept_block],
-                                                n_pts=midlines_nPts,
-                                                smooth=midlines_smooth)
-            inds_kept_block = inds_kept_block[inds_kept_midlines]
-            frameInds_kept = np.array(inds_)[inds_kept_block]
-            inds_kept.extend(frameInds_kept)
 
-            print('Computing tail angles...')
-            kappas = track.curvaturesAlongMidline(midlines, n=midlines_nPts)
-            tailAngles = np.cumsum(kappas, axis=0)
-            print(f'midlines shape = {midlines.shape}')
-            keyVals = [('imgs_fish_crop', imgs_crop), ('imgs_prob', imgs_prob),
-                       ('fishPos', fp), ('midlines', midlines),
-                       ('tailAngles', tailAngles.T),
-                       ('frameInds_processed', frameInds_kept)]
+    inds_blocks = sublistsFromList(imgInds, block_size)
+    inds_kept = []
+    tmbi = track.midlines_from_binary_imgs
+    for iBlock, inds_ in enumerate(inds_blocks):
+        print(f'Block # {iBlock+1}/{len(inds_blocks)}')
+        imgs_now = imgs[inds_].compute()
+        imgs_fish, imgs_prob = fish_imgs_from_raw(imgs_now, unet, bgd=bgd,
+                                                  verbose=0)
+        imgs_fish_grad = -imgs_now*imgs_fish
+        fp = track.findFish(imgs_fish_grad, back_img=None, r=search_radius,
+                            n_iter=n_iter)
+        try:
+            # In case fish was not detected in a few images
+            fp = interp.nanInterp1d(fp)
+        except Exception:
+            # Fails for edge NaNs because extrapolation needed
+            pass
+        non_nan_inds = np.where(1-np.isnan(fp.sum(axis=1)))[0]
+#        print('Cropping images...')
+        imgs_crop = track.cropImgsAroundFish(imgs_fish[non_nan_inds],
+                                             fp[non_nan_inds],
+                                             cropSize=cropSize)
+        if np.ndim(imgs_crop) < 3:
+            imgs_crop = imgs_crop[np.newaxis, ...]
+        pxls_sum = np.apply_over_axes(np.sum, imgs_crop, [1, 2]).flatten()
+        non_zero_inds = np.where(pxls_sum > 3)[0]
+        inds_kept_block = non_nan_inds[non_zero_inds]
+        midlines, inds_kept_midlines = tmbi(imgs_crop[non_zero_inds],
+                                            n_pts=midlines_nPts,
+                                            smooth=midlines_smooth)
+        inds_kept_block = inds_kept_block[inds_kept_midlines]
+        frameInds_kept = np.array(inds_)[inds_kept_block]
+        inds_kept.extend(frameInds_kept)
+
+#        print('Computing tail angles...')
+        kappas = track.curvaturesAlongMidline(midlines, n=midlines_nPts)
+        tailAngles = np.cumsum(kappas, axis=0)
+        keyVals = [('imgs_fish_crop', imgs_crop), ('imgs_prob', imgs_prob),
+                   ('fishPos', fp), ('midlines', midlines),
+                   ('tailAngles', tailAngles.T),
+                   ('frameInds_processed', frameInds_kept)]
+        with h5py.File(path_hFile, mode='a') as hFile:
             for key, val in keyVals:
                 if (key in hFile) & (iBlock == 0):
                     del hFile['key']
                 else:
-                    hFile = createOrAppendToHdf(hFile, key, val, verbose=True)
+                    hFile = createOrAppendToHdf(hFile, key, val, verbose=False)
     return path_hFile
 
 
@@ -2395,16 +2427,18 @@ class track():
         ----------
         midlines: list, (N,)
             Midlines rostrocaudally bisecting the tail of the fish.
-            Each element of the list has dimensions (K,2), where K is a variable
-            number representing the number of points making up the midline
+            Each element of the list has dimensions (K,2), where K is a
+            variable number representing the number of points making up the
+            midline
         n: scalar
-            Number of points after cubic spline interpolation. If n = None, then no interpolation
+            Number of points after cubic spline interpolation. If n = None,
+            then no interpolation
         n_jobs, verbose: See Parallel and delayed from joblib
         """
         from apCode.geom import dCurve, interpolate_curve
         import numpy as np
         from joblib import Parallel, delayed
-        if (np.ndim(midlines)!=1) & isinstance(midlines,list):
+        if (np.ndim(midlines)!=1) & isinstance(midlines, list):
             midlines = [midlines]
         len_midlines = np.array([len(ml) for ml in midlines])
         inds_long = np.where(len_midlines >4)[0]

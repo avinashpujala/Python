@@ -32,7 +32,7 @@ def angleBetween2DVectors(v1, v2):
 
 def animate_images(images, fps=30, display=True, save=False, savePath=None,
                    path_to_ffmpeg = r'V:\Code\FFMPEG\bin\ffmpeg.exe',
-                   **kwargs):
+                   fig_size=(10, 10), **kwargs):
     """
     Movie from an image stack
     Parameters
@@ -66,7 +66,7 @@ def animate_images(images, fps=30, display=True, save=False, savePath=None,
     interp = kwargs.get('interpolation', 'nearest')
     dpi = kwargs.get('dpi', 30)
     plt.style.use(('seaborn-poster', 'dark_background'))
-    fh = plt.figure(dpi=dpi, facecolor='k')
+    fh = plt.figure(dpi=dpi, facecolor='k', figsize=fig_size)
     ax = fh.add_subplot(111, frameon=False)
     ax.set_aspect('equal')
     ax.get_xaxis().set_visible(False)
@@ -267,6 +267,18 @@ def dask_array_from_scanimage_tifs(imgDir):
         Dask array corresponding to an image stack, where T is the number of
         time points, C = # of channels, Z = # of slices, and (M, N) are the
         image height and width respectively.
+    metaData: dict
+        Metadata dictionary with the following keys:
+        filePaths: list or array
+            Paths to each of the .tif file in the path
+        nChannelsInFile: list/array
+            Number of channels in each of .tif file
+        nImagesInFile: list/array
+            Number of images in each .tif file
+        nFramesPerVolume: list/array
+            Number of frames per volume (there can be > 1 vols in each file)
+        nVolumes: list/array
+            Number of volumes in each .tif file
     """
     from skimage.io import imread
     import dask.array as da
@@ -1726,7 +1738,8 @@ class Register():
                 pw_rigid = True
             else:
                 pw_rigid = False
-            mc = MotionCorrect(images, dview=dview, max_shifts=max_shifts,
+            fname_now = cm.movie(images).save('temp.mmap', order='C')
+            mc = MotionCorrect([fname_now], dview=dview, max_shifts=max_shifts,
                                strides=strides, overlaps=overlaps,
                                max_deviation_rigid=max_deviation_rigid,
                                nonneg_movie=True, border_nan=border_nan,

@@ -7,7 +7,7 @@ import pandas as pd
 
 sys.path.append(r'v:/code/python/code')
 import apCode.behavior.FreeSwimBehavior as fsb # noqa E402
-
+from apCode.tanimotom import besselImaging as bing # noqa E402
 
 def add_suffix_to_paths(paths, suffix='proc'):
     """

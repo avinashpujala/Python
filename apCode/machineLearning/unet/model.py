@@ -19,6 +19,19 @@ def dice_coef(y_true, y_pred, smooth=1.0):
 def dice_coef_loss(y_true, y_pred):
     return -dice_coef(y_true, y_pred)
 
+def focal_loss(y_true, y_pred, gamma=2):
+    """
+    Based on the following paper. Addresses class imbalance by downweighting
+    the loss contribution from easy examples (y_pred >> 0.5)
+    Lin, T.-Y., Goyal, P., Girshick, R., He, K., and Dollár, P. (2018). Focal
+    Loss for Dense Object Detection. ArXiv:1708.02002 [Cs].
+    """
+    alpha=0.25 # wt for positive class
+    p_t = y_true*y_pred + (1-y_true)*(1-y_pred)
+    alpha_t = y_true*alpha + (1-y_true)*(1-alpha)
+    loss = -alpha_t*((1-p_t)**gamma)*K.log(p_t+1e-3)
+    return loss
+
 def get_unet(img_width=512, img_height=512, img_channels=3, activation='elu',
              kernel_initializer='he_normal', optimizer='adam',
              loss='binary_crossentropy'):

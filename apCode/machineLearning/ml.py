@@ -10,6 +10,8 @@ import dask
 from dask.diagnostics import ProgressBar
 import numpy as np
 import os
+import keras
+
 
 def augmentImageData(images_train, images_mask, upsample=10,
                      aug_set=('rn', 'sig', 'log', 'inv', 'heq', 'rot', 'rs')):
@@ -34,6 +36,7 @@ def augmentImageData(images_train, images_mask, upsample=10,
         'sig' - sigmoid adjustment
         'log' - logarithmic adjustment
         'inv' - intensity inversion; dim pixels become bright and vice versa.
+
         'heq' - histogram equalization; should account for variations in
                 lighting conditions.
         'rs' -  rescaling around mask and resizing back to old dimensions
@@ -52,20 +55,22 @@ def augmentImageData(images_train, images_mask, upsample=10,
     A_aug: List, (T_aug,)
         List of transformation applied to each of the images in the I_aug
     """
-    from skimage.util import random_noise
+#    from skimage.util import random_noise
     from skimage import exposure
     from apCode.volTools import img as img_
-    import time
-    from skimage.color import gray2rgb, rgb2gray
-    from skimage.exposure import rescale_intensity
+#    from skimage.color import gray2rgb, rgb2gray
+#    from skimage.exposure import rescale_intensity
     from skimage.filters import sobel
+    from apCode.SignalProcessingTools import standardize
     upsample = np.max((1, upsample))
     nImgs = int(images_train.shape[0]*upsample)-images_train.shape[0]
     imgInds = np.random.choice(np.arange(images_train.shape[0]), size=nImgs,
                                replace=True)
-    def map255(x): return (x*255).astype(int)
+
+    def map255(x): return (standardize(x)*255).astype(int)
+
     def apply_func(func, imgs, *args, **kwargs):
-        if np.ndim(imgs)==3:
+        if np.ndim(imgs) == 3:
             imgs = np.transpose(imgs, (2, 0, 1))
             imgs_trans = [func(_, *args, **kwargs) for _ in imgs]
             imgs_trans = np.array(imgs_trans).transpose(1, 2, 0)
@@ -85,14 +90,18 @@ def augmentImageData(images_train, images_mask, upsample=10,
             A.append(aug_)
         elif aug_ == 'rot':
             theta = int(np.random.choice(range(0, 360), size=1))
+
             def func_now(x):
                 return apply_func(img_.rotate, x, theta, preserve_dtype=True)
+
             images.append(dask.delayed(func_now)(img))
             M.append(dask.delayed(func_now)(mask))
             A.append(aug_)
         elif aug_ == 'sig':
             def func_now(x):
-                return apply_func(exposure.adjust_sigmoid, x.astype(int))
+                foo = apply_func(exposure.adjust_sigmoid, x.astype(int))
+                foo = map255(foo)
+                return foo
             images.append(dask.delayed(func_now)(img))
             M.append(mask)
             A.append(aug_)
@@ -126,7 +135,7 @@ def augmentImageData(images_train, images_mask, upsample=10,
             A.append('sob')
         count += 1
     images = np.array(dask.compute(*images))
-    masks =[]
+    masks = []
     for mask in M:
         if not isinstance(mask, np.ndarray):
             masks.append(mask.compute())
@@ -139,154 +148,9 @@ def augmentImageData(images_train, images_mask, upsample=10,
     augs = np.concatenate((np.array(['None']*images_train.shape[0]), augs))
     inds_shuffle = np.random.choice(np.arange(images.shape[0]),
                                     size=images.shape[0], replace=False)
-    images, masks, augs = images[inds_shuffle], masks[inds_shuffle], augs[inds_shuffle]
+    images, masks = images[inds_shuffle], masks[inds_shuffle]
+    augs = augs[inds_shuffle]
     return images, masks, augs
-
-
-def augmentImageData_old(images_train, images_mask, upsample=10,
-                     aug_set=('rn', 'sig', 'log', 'inv', 'heq', 'rot', 'rs',
-                              'sob', 'et')):
-    """
-    Augment image data prior to training to increase the size of the training
-    data, and minimize overfitting to particular dataset.
-    Parameters
-    ----------
-    images_train: array, (T,M,N)
-        Stack of T training images of dimensions M x N
-    images_mask: array, (T, M, N)
-        Masks for the training images
-    upsample: scalar
-        The factor by which the training set approximately grows after
-        augmentation. If upsample = s, then the augmented training set
-         will have s*T images
-    aug_set: list of strings
-        A list of strings wherein each string is an abbreviation for a type of
-        augmentation. The allowed strings are
-        'rn' - random noise; random noise is introduced into the images
-        'rot' - rotation by a random angle between 0 and 360 degrees
-        'sig' - sigmoid adjustment
-        'log' - logarithmic adjustment
-        'inv' - intensity inversion; dim pixels become bright and vice versa.
-        'heq' - histogram equalization; should account for variations in
-                lighting conditions.
-        'rs' -  rescaling around mask and resizing back to old dimensions
-        'sob' - Sobel filter to make the edges pronounced
-        By default, each of these transormations ('rs' is omitted by default)
-        is included with equal frequency, but this can be controlled by
-        altering 'aug_set'. For instance, aug_set = ('rn', 'rn', 'rn', 'heq')
-        will only introduce random noise injection and histogram equalization
-        with the latter occurring thrice as often.
-    Returns
-    -------
-    I_aug: array, (T_aug, M, N[,nChannels]), where T_aug = upsample*T
-        Augmented training image set
-    M_aug: array, (T_aug, M, N)
-        Augmented mask set
-    A_aug: List, (T_aug,)
-        List of transformation applied to each of the images in the I_aug
-    """
-    from skimage.util import random_noise
-    from skimage import exposure
-    import numpy as np
-    from apCode.volTools import img as img_
-    import time
-    from skimage.color import gray2rgb, rgb2gray
-    from skimage.exposure import rescale_intensity
-    from skimage.filters import sobel
-    upsample = np.max((1, upsample))
-    nImgs = int(images_train.shape[0]*upsample)-images_train.shape[0]
-    imgInds = np.random.choice(np.arange(images_train.shape[0]), size=nImgs,
-                               replace=True)
-
-    def map255(x): return (x*255).astype(int)
-    images, M = [], []
-    A = []
-    count = 0
-    for img, mask in zip(images_train[imgInds], images_mask[imgInds]):
-        ind_ = np.mod(count, len(aug_set))
-        aug_ = aug_set[ind_]
-        if aug_ == 'rn':
-            images.append(map255(random_noise(img)))
-            M.append(mask)
-            A.append(aug_)
-        elif aug_ == 'et':
-            t = int(time.monotonic())
-            rs = np.random.RandomState(t)
-            foo = rescale_intensity(rgb2gray(elastic_transform(
-                gray2rgb(img), random_state=rs)),
-                out_range=(0, 255)).astype(img.dtype)
-            images.append(foo)
-            foo = rescale_intensity(rgb2gray(elastic_transform(
-                gray2rgb(mask), 5, 1, 20, random_state=rs)),
-                out_range=(0, 255)).astype(img.dtype)
-            M.append(foo)
-            A.append(aug_)
-        elif aug_ == 'rot':
-            theta = int(np.random.choice(range(0, 360), size=1))
-            img_rot = []
-            if np.ndim(img)==3:
-                for iCh in range(img.shape[2]):
-                    img_rot.append(img_.rotate(img[..., iCh], theta,
-                                               preserve_dtype=True))
-                img_rot = np.transpose(img_rot, (1, 2, 0))
-            else:
-                img_rot = img_.rotate(img, theta, preserve_dtype=True)
-            images.append(img_rot)
-            M.append(img_.rotate(mask, theta, preserve_dtype=True))
-            A.append(aug_)
-        elif aug_ == 'sig':
-            images.append(exposure.adjust_sigmoid(img))
-            M.append(mask)
-            A.append(aug_)
-        elif aug_ == 'log':
-            images.append(exposure.adjust_log(img))
-            M.append(mask)
-            A.append(aug_)
-        elif aug_ == 'inv':
-            images.append(img.max()-img)
-            M.append(mask)
-            A.append(aug_)
-        elif aug_ == 'heq':
-            if np.ndim(img)==3:
-                for ch in range(img.shape[2]):
-                    img[..., ch] = map255(exposure.equalize_hist(img[..., ch]))
-            else:
-                img = map255(exposure.equalize_hist(img))
-            images.append(img)
-            M.append(mask)
-            A.append(aug_)
-        elif aug_ == 'rs':
-            sf = np.random.choice(np.linspace(1.1, 1.5, 5), size=1)
-            if np.ndim(img)==3:
-                img_rs = []
-                for ch in range(img.shape[2]):
-                    img_rs.append(rescaleIsometrically(img[..., ch], sf))
-                img_rs = np.transpose(np.array(img_rs), (1, 2, 0))
-            else:
-                img_rs = rescaleIsometrically(img, sf)
-            mask_rs = rescaleIsometrically(mask, sf)
-            images.append(img_rs)
-            M.append(mask_rs)
-            A.append('rs')
-        elif aug_ == 'sob':
-            if np.ndim(img)==3:
-                for ch in range(img.shape[2]):
-                    img[..., ch] = map255(sobel(img[..., ch]))
-            else:
-                img = map255(sobel(img))
-            images.append(img)
-            M.append(mask)
-            A.append('sob')
-        count += 1
-    images, M, A = np.array(images), np.array(M), np.array(A)
-    images = np.concatenate((images_train, images), axis=0)
-    M = np.concatenate((images_mask, M), axis=0)
-    A = np.concatenate((np.array(['None']*images_train.shape[0]), A))
-
-    inds_shuffle = np.random.choice(np.arange(images.shape[0]),
-                                    size=images.shape[0], replace=False)
-    images, M, A = images[inds_shuffle], M[inds_shuffle], A[inds_shuffle]
-    return images, M, A
 
 
 def copyImgsNNTraining(imgDirs, prefFrameRangeInTrl=None,
@@ -451,10 +315,12 @@ def loadPreTrainedUnet(path_to_unet, search_dir=None, name_prefix='trainedU'):
     from apCode.machineLearning.unet import model
     import apCode.FileTools as ft
     import os
+    custom_objects = dict(dice_coef=model.dice_coef,
+                          focal_loss=model.focal_loss)
     if path_to_unet is not None:
         print('Loading u net...')
-        unet = model.load_model(path_to_unet,
-                                custom_objects=dict(dice_coef=model.dice_coef))
+
+        unet = model.load_model(path_to_unet, custom_objects=custom_objects)
     else:
         file_u = ft.findAndSortFilesInDir(search_dir, ext='h5',
                                           search_str=name_prefix)
@@ -462,9 +328,8 @@ def loadPreTrainedUnet(path_to_unet, search_dir=None, name_prefix='trainedU'):
             file_u = file_u[-1]
             path_to_unet = os.path.join(search_dir, file_u)
             print('Loading unet...')
-            dc = model.dice_coef
             unet = model.load_model(path_to_unet,
-                                    custom_objects=dict(dice_coef=dc))
+                                    custom_objects=custom_objects)
         else:
             print('No uNet found in search path, explicitly specify path')
             unet = None
@@ -1421,7 +1286,8 @@ def rescale(images, masks, pad_type='edge', n_jobs=32, verbose=0):
 def retrainU(uNet, imgsOrPath, masksOrPath, upSample=6, imgExt: str = 'bmp',
              n_jobs: int = 32, verbose: int = 0, epochs: int = 50,
              saveModel: bool = True, multiLevel=False,
-             aug_set=('rn', 'sig', 'log', 'inv', 'heq', 'rot', 'rs'), **fit_kwargs):
+             aug_set=('rn', 'sig', 'log', 'inv', 'heq', 'rot', 'rs'),
+             checkPoint=False, **fit_kwargs):
     """
     Further trains a pre-trained U net model
     Parameters
@@ -1444,7 +1310,9 @@ def retrainU(uNet, imgsOrPath, masksOrPath, upSample=6, imgExt: str = 'bmp',
     saveModel: bool
         If True (default), saves the model as an hdf (.h5) file with
         timestamped filename
-
+    checkPoint: bool
+        If True, then uses ModelCheckPoint callback from keras to store
+        the weights from the best epoch
     Returns
     -------
     uNet: The trained uNet
@@ -1474,7 +1342,23 @@ def retrainU(uNet, imgsOrPath, masksOrPath, upSample=6, imgExt: str = 'bmp',
     if (not multiLevel) & (masks_max > 1):
         masks = (masks/masks_max).astype(int)
     print('Training unet...')
-    uNet.fit(images, masks, verbose=verbose, epochs=epochs, **fit_kwargs)
+    if keras.backend.backend().lower()=='tensorflow':
+        # Define Tensorboard as a Keras callback
+        from keras.callbacks import TensorBoard
+        tensorboard = TensorBoard(log_dir='.\logs', histogram_freq=1,
+                                  write_images=True)
+        keras_callbacks = [tensorboard]
+    if checkPoint:
+        from keras.callbacks import ModelCheckpoint
+        checkpointer = ModelCheckpoint(filepath="best_weights.hdf5",
+                                       monitor = 'val_acc',
+                                       verbose=1,
+                                       save_best_only=True)
+        print('Checkpointing!')
+        uNet.fit(images, masks, verbose=verbose, epochs=epochs,
+                 callbacks=[checkpointer], **fit_kwargs)
+    else:
+        uNet.fit(images, masks, verbose=verbose, epochs=epochs, **fit_kwargs)
     if saveModel:
         dir_save = os.path.split(imgsOrPath)[0]
         file_save = 'trainedUnet_{}.h5'.format(time.strftime('%Y%m%dT%H%m'))
