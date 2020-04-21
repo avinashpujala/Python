@@ -616,6 +616,26 @@ class interp():
         X_interp = (x+y)*0.5
         return X_interp
 
+    def nanInterp2d(X, **kwargs_griddata):
+        """
+        Interpolates a 1d signal that has NaN values in it
+        Parameters
+        ----------
+        x: array, (nPts[, nSignals])
+            Timeseries signal
+        kind: scalar
+            Type of interpolation. See scipy.interpolate.interp1d
+
+        Returns
+        -------
+        x_interp: array, (nPts[, nSignals])
+            Interpolated signal(s) without NaNs.
+        """
+        from scipy.interpolate import griddata
+        coords = np.where(np.isnan(X)==False)
+        gx, gy = np.meshgrid(np.arange(X.shape[1]), np.arange(X.shape[0]))
+        X_interp = griddata(coords, X[coords], (gy, gx), **kwargs_griddata)
+        return X_interp
 
 def levelCrossings(x, thr=0):
     """

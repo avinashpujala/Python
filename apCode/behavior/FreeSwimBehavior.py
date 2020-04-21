@@ -335,9 +335,9 @@ def centerImagesOnFish(I,fishPos):
     I_roll = list(map(lambda x, y: np.roll(x,origin[1]-y[1],axis = 1), I_roll,fishPos))
     return I_roll
 
-def copy_cropped_images_for_training(imgsOrPath, cropSize=(120, 120),
-                                     savePath=None, nImgsToCopy=50,
-                                     detect_motion_frames=True, **motion_kwargs):
+def copy_images_for_training(imgsOrPath, cropSize=None,
+                             savePath=None, nImgsToCopy=50,
+                             detect_motion_frames=True, **motion_kwargs):
     """
     Return probability images generated using the specified U net.
     Parameters
@@ -361,9 +361,7 @@ def copy_cropped_images_for_training(imgsOrPath, cropSize=(120, 120),
     imgs_crop: array, (nImgsToCopy, *cropSize)
         Cropped images
     """
-    from apCode.machineLearning import ml as mlearn
     import apCode.volTools as volt
-    import apCode.FileTools as ft
     from apCode import util
     daskArr = False
     if isinstance(imgsOrPath, str):
