@@ -1263,7 +1263,7 @@ def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
     import apCode.geom as geom
     import numpy as np
     from dask import delayed, compute
-    import os
+    # import os
 
     def getDists(point, points): return np.sum((point.reshape(1, -1)-points)**2, axis=1)**0.5
 

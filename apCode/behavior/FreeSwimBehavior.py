@@ -406,7 +406,7 @@ def copy_images_for_training(imgsOrPath, cropSize=None,
 
     if savePath is not None:
         imgDims = imgs.shape[-2:]
-        name_dir = f'images_train_{imgDims[0]}x{imgDims[1]}_{util.timestamp()}'
+        name_dir = f'images_train_{imgDims[0]}x{imgDims[1]}_{util.timestamp("minute")}'
         path_save = os.path.join(savePath, name_dir)
         if not os.path.exists(path_save):
             os.mkdir(path_save)
