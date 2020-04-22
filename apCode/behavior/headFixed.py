@@ -1315,16 +1315,19 @@ def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
         inds = np.arange(1, len(midlines))
         count = 0
         for ind in inds:
-            d = np.sum((midlines[0][0]-midlines[ind][0])**2)
-            d_flip = np.sum((midlines[0][0]-np.flipud(midlines[ind])[0])**2)
-            if d > d_flip:
-                count = count + 1
-                midlines[ind] = np.flipud(midlines[ind])
+            if len(midlines[ind])>0:
+                d = np.sum((midlines[0][0]-midlines[ind][0])**2)
+                d_flip = np.sum((midlines[0][0]-np.flipud(midlines[ind])[0])**2)
+                if d > d_flip:
+                    count = count + 1
+                    midlines[ind] = np.flipud(midlines[ind])
+            else:
+                midlines[ind] = midlines[ind]
         return midlines
 
     if np.ndim(images) == 2:
         images = images[np.newaxis, ...]
-    n_workers = np.min((os.cpu_count(), 48))
+    # n_workers = np.min((os.cpu_count(), 48))
     midlines, ml_dist = zip(*compute(*[delayed(midlineFromImg)(img)
                                        for img in images]))
     midlines = np.array(midlines)

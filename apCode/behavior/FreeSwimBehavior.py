@@ -11,6 +11,7 @@ import dask
 import h5py
 from dask.diagnostics import ProgressBar
 sys.path.append(r'v:/code/python/code')
+import apCode.volTools as volt
 
 
 def alignSignalsByOnset(signals, startSignalInd=0, padType='edge'):
@@ -2582,12 +2583,14 @@ class track():
             imgs_crop: array, (nImgs, *imgDims)
                 Cropped images
         """
+        from apCode.SignalProcessingTools import interp
         if isinstance(imgsOrDir, str):
             imgs=volt.dask_array_from_image_sequence(imgsOrDir, ext='bmp')
         else:
             imgs = imgsOrDir
         fp = track.findFish(imgs, back_img=back_img, r=r, n_iter=2,
                             n=nImgs_for_back)
+        fp = interp.nanInterp1d(fp, kind='slinear', fill_value='extrapolate')
         imgs_crop = track.cropImgsAroundFish(imgs, fp, **crop_kwargs)
         out = dict(fishPos=fp, imgs_crop=imgs_crop)
         return out
@@ -2882,7 +2885,7 @@ class track():
             return ml_smooth, ml_dist
 
         def orientMidlines_(midlines):
-            inds = np.arange(1,len(midlines))
+            inds = np.arange(1, len(midlines))
             count = 0
             midlines_adj = midlines.copy()
             for ind in inds:
@@ -2901,7 +2904,7 @@ class track():
             if (n_jobs >1) & (n_jobs >= images.shape[0]):
                 from joblib import Parallel, delayed
                 midlines, ml_dist = zip(*Parallel(n_jobs = n_jobs, verbose = verbose)
-                (delayed(midlineFromImg)(img, smooth,n) for img in images))
+                (delayed(midlineFromImg)(img, smooth, n) for img in images))
             else:
                 midlines, ml_dist = zip(*[midlineFromImg(img, smooth, n) for img in images])
         midlines = np.array(midlines)

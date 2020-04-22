@@ -538,7 +538,7 @@ class interp():
         x = np.hstack((beg, mid, endd))
         return x
 
-    def nanInterp1d(x, kind='cubic'):
+    def nanInterp1d(x, kind='cubic', **kwargs):
         """
         Interpolates a 1d signal that has NaN values in it
         Parameters
@@ -562,7 +562,7 @@ class interp():
         tt = np.linspace(0, 1, len(x))
         t_ = tt[nonNanInds]
         x_ = x[nonNanInds]
-        xx = interp1d(t_, x_, kind=kind, axis=0)(tt)
+        xx = interp1d(t_, x_, kind=kind, axis=0, **kwargs)(tt)
         return xx
 
     def downsample_and_interp2d(X, ds_ratio=(0.5, 0.5), **kwargs):
