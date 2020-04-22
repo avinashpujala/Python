@@ -7,7 +7,7 @@ Created on Mon Apr 20 16:41:01 2020
 
 from __future__ import print_function, division
 
-from keras.datasets import mnist
+# from keras.datasets import mnist
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D
 from keras.layers.advanced_activations import LeakyReLU
@@ -106,7 +106,7 @@ class GAN():
         X_min = X_train.min()
         X_max = X_train.max()
         X_train = -1 + 2*(X_train-X_min)/(X_max-X_min)
-        X_train = np.expand_dims(X_train, axis=2)
+        X_train = X_train[..., None]
 
         # Adversarial ground truths
         valid = np.ones((batch_size, 1))
@@ -145,8 +145,8 @@ class GAN():
             print ("%d [D loss: %f, acc.: %.2f%%] [G loss: %f]" % (epoch, d_loss[0], 100*d_loss[1], g_loss))
 
             # If at save interval => save generated image samples
-            if epoch % sample_interval == 0:
-                self.sample_images(epoch)
+            # if epoch % sample_interval == 0:
+            #     self.sample_images(epoch)
 
     def sample_images(self, epoch):
         r, c = 5, 5
