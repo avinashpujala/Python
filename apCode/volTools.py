@@ -1612,6 +1612,7 @@ class Register():
         self._patchPerc = patchPerc
         self._patchOverlapPerc = patchOverlapPerc
         self._maxShiftPerc = maxShiftPerc
+        self.cwd_ = os.getcwd()
 
     @staticmethod
     def correlate_to_ref(images, ref=None):
@@ -1698,6 +1699,7 @@ class Register():
             print('Registering with caiman...')
             import caiman as cm
             from caiman.motion_correction import MotionCorrect
+            import tifffile as tff
             cm.stop_server()
             n_processes = np.maximum(np.minimum(int(psutil.cpu_count()),
                                                 images.shape[0]-2), 1)
@@ -1738,7 +1740,10 @@ class Register():
                 pw_rigid = True
             else:
                 pw_rigid = False
-            fname_now = cm.movie(images).save('temp.mmap', order='C')
+            cwd = os.getcwd()
+            fname_now = os.path.join(cwd, 'tmp.tif')
+            self.fname_ = fname_now
+            tff.imsave(fname_now, data=images)
             mc = MotionCorrect([fname_now], dview=dview, max_shifts=max_shifts,
                                strides=strides, overlaps=overlaps,
                                max_deviation_rigid=max_deviation_rigid,

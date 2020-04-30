@@ -2125,12 +2125,15 @@ def swimOnAndOffsets(x, ker_len=50, thr=1, thr_slope=0.5, plotBool=False):
     return np.array(ons_new), np.array(offs_new), np.array(signs)
 
 
-def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
-                                         motion_thresh_perc=None,
-                                         nImgs_for_back=1000, block_size=750,
-                                         search_radius=10, n_iter=2,
-                                         cropSize=140, midlines_nPts=50,
-                                         midlines_smooth=20, resume=False):
+def tail_angles_from_raw_imgs_using_unet_resume(imgDir, unet, ext='bmp',
+                                                imgInds=None,
+                                                motion_thresh_perc=None,
+                                                nImgs_for_back=1000,
+                                                block_size=750,
+                                                search_radius=10, n_iter=2,
+                                                cropSize=140,
+                                                midlines_nPts=50,
+                                                midlines_smooth=20):
     """
     Process images using U net upto the extraction of tail angles and save to
     an existing or new HDF file in a subfolder ('proc') of the image diretory
@@ -2176,7 +2179,7 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
     from apCode.SignalProcessingTools import interp, levelCrossings
 
     print('Reading images into dask array')
-    imgs = dask_array_from_image_sequence(imgDir, ext='bmp')
+    imgs = dask_array_from_image_sequence(imgDir, ext=ext)
     nImgs_total = imgs.shape[0]
 
     # Check for existing hdf file in path, else create
@@ -2303,6 +2306,172 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
                     hFile = createOrAppendToHdf(hFile, key, val, verbose=False)
     return path_hFile
 
+
+def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
+                                         motion_thresh_perc=None,
+                                         nImgs_for_back=1000, block_size=750,
+                                         search_radius=10, n_iter=2,
+                                         cropSize=140, midlines_nPts=50,
+                                         midlines_smooth=20, resume=False):
+    """
+    Process images using U net upto the extraction of tail angles and save to
+    an existing or new HDF file in a subfolder ('proc') of the image diretory
+    Parameters
+    ----------
+    imgDir: str
+        Directory of raw images
+    unet: Keras model
+        Trained U net model
+    ext: str
+        File extension of images in the specified directory
+    imgInds: array (n,) or None
+        Indices of select images to process
+    motion_thresh_perc: scalar (between 0-100) or None
+        If not None, then detects motion from images using estimate_motion and
+        uses this value as the percentile threshold for motion. This will
+        restrict processing to frames with motion and 100 frames around motion
+        on- and offset. A good value is 60
+    nImgs_for_back: int
+        At most this many images are used for computing background
+    block_size: int
+        Size of image blocks to process at once for easing memory load
+    search_radius: scalar
+        Parameter r in track.findFish
+    n_iter: int
+        Eponymous parameter in track.findFish
+    cropSize: int
+        Size to which probability images are to be cropped
+    midlines_nPts: int
+        Final length of midlines in points
+    midlines_smooth: int
+        Smoothing factor for midlines. See geom.smoothen_curve
+    resume: bool
+        Not yet implemented
+    Returns
+    -------
+    Path to HDF file storing relevant info
+    """
+    from apCode.volTools import dask_array_from_image_sequence
+    from apCode.FileTools import sublistsFromList
+    from apCode.util import timestamp
+    from apCode.hdf import createOrAppendToHdf
+    from apCode.SignalProcessingTools import levelCrossings
+    tmbi = track.midlines_from_binary_imgs
+
+    print('Reading images into dask array')
+    imgs = dask_array_from_image_sequence(imgDir, ext=ext)
+    nImgs_total = imgs.shape[0]
+    print(f'{nImgs_total} images')
+
+    procDir = os.path.join(imgDir, 'proc')
+    if not os.path.exists(procDir):
+        os.mkdir(procDir)
+    fn_hFile = f'procData_{timestamp("hour")}.h5'
+    path_hFile = os.path.join(procDir, fn_hFile)
+
+    with h5py.File(path_hFile, mode='a') as hFile:
+        if 'nImgs_total' in hFile:
+            del hFile['nImgs_total']
+        hFile.create_dataset('nImgs_total', data=np.array(nImgs_total))
+        print('Getting background image')
+        bgd = track.computeBackground(imgs, n=nImgs_for_back).compute()
+        if 'img_background' in hFile:
+            del hFile['img_background']
+        hFile = createOrAppendToHdf(hFile, 'img_background', bgd,
+                                    verbose=False)
+        if motion_thresh_perc is not None:
+            print('Estimating motion from images...')
+            motion = estimate_motion(imgs, bgd=bgd)
+            if 'motion' in hFile:
+                del hFile['motion']
+            hFile= createOrAppendToHdf(hFile, 'motion_from_imgs', motion,
+                                       verbose=False)
+            if 'motion_thresh_perc' in hFile:
+                del hFile['motion_thresh_perc']
+            hFile = createOrAppendToHdf(hFile, 'motion_thresh_perc',
+                                        np.array(motion_thresh_perc))
+            n_peri = 100
+            thresh_motion = np.percentile(motion, motion_thresh_perc)
+            ons, offs = levelCrossings(motion, thresh_motion)
+            inds_motion = []
+            for on, off in zip(ons, offs):
+                inds_now = np.arange(on - n_peri, off + n_peri)
+                inds_motion.extend(inds_now)
+                inds_motion = np.unique(inds_motion)
+                inds_motion = inds_motion[np.where((inds_motion >= 0) &
+                                                   (inds_motion <
+                                                    len(motion)))]
+        else:
+            inds_motion = np.arange(nImgs_total)
+
+        if 'inds_motion' in hFile:
+                del hFile['inds_motion']
+        hFile = createOrAppendToHdf(hFile, 'inds_motion', inds_motion,
+                                    verbose=False)
+        inds_kept = []
+        if imgInds is None:
+            imgInds = np.arange(nImgs_total)
+        imgInds = np.intersect1d(imgInds, inds_motion)
+        inds_blocks = sublistsFromList(imgInds, block_size)
+        inds_kept = []
+        for iBlock, inds_ in enumerate(inds_blocks):
+            print(f'Block # {iBlock+1}/{len(inds_blocks)}')
+            imgs_now = imgs[inds_].compute()
+            imgs_fish, imgs_prob = fish_imgs_from_raw(imgs_now, unet, bgd=bgd,
+                                                      verbose=0)
+            imgs_fish_grad = -imgs_now*imgs_fish
+            fp = track.findFish(imgs_fish_grad, back_img=None,
+                                r=search_radius, n_iter=n_iter)
+            if np.isnan(fp.sum()):
+                print('Some NaNs in fish position, consider retraining U-net')
+
+            non_nan_inds = np.where(1-np.isnan(fp.sum(axis=1)))[0]
+            inds_from_block = np.array(inds_)[non_nan_inds]
+            if len(inds_from_block)>0:
+                imgs_crop = track.cropImgsAroundFish(imgs_fish[non_nan_inds],
+                                                     fp[non_nan_inds],
+                                                     cropSize=cropSize)
+            else:
+                print('No fish positions in block')
+                continue
+
+            if np.ndim(imgs_crop) < 3:
+                imgs_crop = imgs_crop[np.newaxis, ...]
+            pxls_sum = np.apply_over_axes(np.sum, imgs_crop, [1, 2]).flatten()
+            non_zero_inds = np.where(pxls_sum > 3)[0]
+            inds_from_block = inds_from_block[non_zero_inds]
+            if len(inds_from_block)>0:
+                midlines, inds_kept_midlines = tmbi(imgs_crop[non_zero_inds],
+                                                    n_pts=midlines_nPts,
+                                                    smooth=midlines_smooth)
+            else:
+                continue
+            inds_from_block = inds_from_block[inds_kept_midlines]
+            if len(inds_from_block)>0:
+                kappas = track.curvaturesAlongMidline(midlines,
+                                                      n=midlines_nPts)
+                tailAngles = np.cumsum(kappas, axis=0)
+            else:
+                continue
+            keyVals = [('imgs_fish_crop', imgs_crop),
+                       ('imgs_prob', imgs_prob),
+                       ('fishPos', fp), ('midlines', midlines),
+                       ('tailAngles', tailAngles.T),
+                       ('frameInds_processed', inds_from_block)]
+            for key, val in keyVals:
+                if (key in hFile) & (iBlock == 0):
+                    del hFile['key']
+                else:
+                    hFile = createOrAppendToHdf(hFile, key, val,
+                                                    verbose=False)
+            inds_kept.extend(inds_from_block)
+        inds_kept = np.unique(np.array(inds_kept))
+        if 'frameInds_processed_all' in hFile:
+            del hFile['frameInds_processed_all']
+        hFile = createOrAppendToHdf(hFile, 'frameInds_processed_all',
+                                    inds_kept)
+
+    return path_hFile
 
 class track():
     import apCode.volTools as volt
