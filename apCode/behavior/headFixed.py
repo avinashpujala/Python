@@ -11,7 +11,7 @@ import os
 import sys
 import h5py
 import re
-sys.path.append(r'v:/code/python/code')
+sys.path.append(r'\\dm11\koyamalab\code\python\code')
 import apCode.volTools as volt  # noqa: E402
 from apCode import util  # noqa: E402
 import apCode.FileTools as ft  # noqa: E402
@@ -104,13 +104,54 @@ def comBoot(h_trl, t_trl, target=25):
     return h_trl, t_trl
 
 
+def consolidate_rois(rois, volDims):
+    """Given a set of ImageJ rois (an ordered dictionary)
+    that are draw across multiple slices of an image volume,
+    returns masks created from consolidation of identically-named
+    ROIs.
+    Parameters
+    ----------
+    rois: ordered dict
+        ImageJ created ROI read andreturned as an ordered dictionary
+        by mlearn.readimageJRois
+    volDims: tuple-like, (3, ) = (nSlices, imgHeight, imgWidth)
+        Dimensions of the volume in which the ROIs were drawn. Used
+        to create masks
+    Returns
+    -------
+    masks: array, (nRois, nSlices, *imgDims)
+    roiNames: list of strings
+        Unique names of ROIs
+    """
+    def strip_roi_suffices(strList):
+        strList_new = []
+        for _ in strList:
+            a, b, c = _.split('.')
+            strList_new.append(a + '.' + b)
+        return np.array(strList_new)
+    roiNames_orig = list(rois.keys())
+    roiNames = strip_roi_suffices(roiNames_orig)
+    roiNames_unique = np.unique(roiNames)
+    masks = []
+    for rn in roiNames_unique:
+        inds = util.findStrInList(rn, roiNames)
+        mask = np.zeros(volDims)
+        for ind in inds:
+            roi_ = rois[roiNames_orig[ind]]
+            z = roi_['position']
+            mask[z-1] = roi_['mask']
+        masks.append(mask)
+    return np.array(masks), roiNames_unique
+
+
+
 def copyFishImgsForNNTraining(exptDir, prefFrameRangeInTrl=(115, 160),
                               nImgsForTraining: int = 50,
                               overWrite: bool = False):
-    """ A convenient function for randomly selecting fish images from within a
-    range of frames (typically, peri-stimulus to maximize postural diversity)
-    in each trial directory of images, and then writing those images in a
-    directory labeled "imgs_train"
+    """ A convenient function for randomly selecting fish images from within
+    a range of frames (typically, peri-stimulus to maximize postural
+    diversity) in each trial directory of images, and then writing those
+    images in a directory labeled "imgs_train"
     Parameters
     ----------
     exptDir: string

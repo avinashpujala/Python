@@ -7,7 +7,7 @@ Created on Tue Aug 04 14:06:13 2015
 import numpy as np
 import scipy as sp
 import sys
-sys.path.append(r'V:/code/python/code')
+sys.path.append(r'\\dm11\koyamalab\code\python\code')
 
 
 class AlignTimeseries(object):
