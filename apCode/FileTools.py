@@ -9,6 +9,7 @@ import os
 import sys
 import shutil as sh
 import numpy as np
+import glob
 sys.path.append(r'v:/code/python/code')
 from apCode import util  # noqa: E402
 
@@ -84,15 +85,17 @@ def evenlyDiviseDir(inputDir, chunkSize, ext='', remove=False):
 
 def findAndSortFilesInDir(fileDir, ext=None, search_str=None):
     '''
-    Finds files in a specified directory with specified extension and/or string
-    in name.
+    Finds files in a specified directory with specified extension and/or
+    string in name.
     '''
     if (ext == None) & (search_str == None):
         filesInDir = np.sort(os.listdir(fileDir))
     elif (ext != None) & (search_str == None):
-        filesInDir = np.sort([f for f in os.listdir(fileDir) if f.endswith(ext)])
+        filesInDir = np.sort([f for f in os.listdir(fileDir) if
+                              f.endswith(ext)])
     elif (ext == None) & (search_str != None):
-        filesInDir = np.sort([f for f in os.listdir(fileDir) if f.find(search_str) != -1])
+        filesInDir = np.sort([f for f in os.listdir(fileDir) if
+                              f.find(search_str) != -1])
     else:
         filesInDir = np.sort([f for f in os.listdir(fileDir) if
                               (f.endswith(ext) & (f.find(search_str) != -1))])
@@ -168,9 +171,9 @@ def getNumStamps(fileNames):
 
 def moveFilesInSubDirsToRoot(rootDir, ext: str = 'tif', copy: bool = False):
     """
-    Move or copy files with matching extension in all of the subdirectories of
-    the root directory to the root directory. Prefixes are added to the files to
-    prevent name clash and to indicate their original locations.
+    Move or copy files with matching extension in all of the subdirectories
+    of the root directory to the root directory. Prefixes are added to the
+    files to prevent name clash and to indicate their original locations.
     Parameters
     ----------
     rootDir: str
@@ -221,7 +224,8 @@ def moveFilesUpOneLevel(srcDir, ext='', processing='parallel'):
     Parameters:
     srcDir - String; source directory in which to files and move up one level
     ext - String; extension of the files to find in source directory
-    processing - String, 'parallel' or 'serial'. If parallel, processes in parallel
+    processing - String, 'parallel' or 'serial'. If parallel, processes in
+    parallel
     '''
     import time
 
@@ -273,19 +277,36 @@ def recursively_find_paths_with_searchStr(searchDir, searchStr):
     inds = util.findStrInList(searchStr, roots)
     return np.array(roots)[inds]
 
+def rename_files(fileDir, pre_str, post_str):
+    """
+    Renames files in specified directory by replacing the substring pre_str
+    in the file name with the substring post_str
+    """
+    import dask
+    from dask.diagnostics import ProgressBar
+    def replaceAndMove(src, pre_str, post_str):
+        dst = src.replace(pre_str, post_str)
+        sh.move(src, dst)
+    filePaths = glob.glob(os.path.join(fileDir, f'*{pre_str}*.*' ))
+    foo = [dask.delayed(replaceAndMove)(fp, pre_str, post_str) for
+           fp in filePaths]
+    with ProgressBar():
+        dask.compute(*foo)
+    return fileDir
 
 def scanImageTifInfo(tifDirOrPaths, searchStr='', n_jobs=32, verbose=0):
     """
-    Returns some useful info about .tif files in a folder collected with ScanImage.
-    To do this quickly, reads scanImage metadata without loading images.
+    Returns some useful info about .tif files in a folder collected with
+    ScanImage. To do this quickly, reads scanImage metadata without loading
+    images.
     Parameters
     ----------
     tifDirOrPaths: string or list/array of strings
-        Path to the directory containing the .tif files or a list/array of paths
-        to the .tif files
+        Path to the directory containing the .tif files or a list/array of
+        paths to the .tif files
     searchStr: string
-        Filter the .tif files by looking for this string token in file names. Only
-        valid when tifDirOrPath is a directory.
+        Filter the .tif files by looking for this string token in file names.
+        Only valid when tifDirOrPath is a directory.
     n_jobs, verbose: see Parallel, delayed from joblib
     Returns
     -------
@@ -302,8 +323,8 @@ def scanImageTifInfo(tifDirOrPaths, searchStr='', n_jobs=32, verbose=0):
 
     def tifInfo(filePath):
         """
-        Given the path to a tif file recorded returns the number of image frames
-        within as well as number of image channels
+        Given the path to a tif file recorded returns the number of image
+        frames within as well as number of image channels
         """
         import numpy as np
         with tff.TiffFile(filePath) as tf:
@@ -369,6 +390,63 @@ def splitFolders(srcDir, nParts):
                     os.mkdir(dst)
                 sh.move(src, dst)
     print(int(time.time()-tic), 'sec')
+
+
+def split_files_into_subs(fileDir, n_sub: int = 4, div=750, ext='bmp',
+                          subPrefix='sub'):
+    """ Split files in a directory into 'n_sub' subdirectories within that
+    directory such that the # of files in each subdirectory is divisible by
+    'div'. If the total # of files does not evenly divide into 'div', the does
+    not move the remainder of the files into a subdirectory.
+    Parameters
+    ----------
+    fileDir: str
+        Path to the directory of files to be moved
+    n_sub: int
+        Number of subdirectories into which the files are to be moved
+    div: int or None
+        The # of files in each subfolder wil be divisible by this number
+    ext: str
+        File extension filter
+    subPrefix: str
+        Name prefix of the created subdirectories
+    Returns
+    -------
+    subDirs: List-like
+        Subdirectory paths
+    """
+    import dask
+    if div is None:
+        div = 1
+    filePaths = glob.glob(os.path.join(fileDir, f'*.{ext}'))
+    filePaths = np.array(filePaths)
+    N = len(filePaths)
+    N_div = (N//div)*div
+    inds = np.arange(N_div)
+    subList = sublistsFromList(inds, div)
+    chunkSize = len(subList)//n_sub
+    supList = sublistsFromList(np.arange(len(subList)), chunkSize)
+    if len(supList)>n_sub:
+        supList[-2].extend(supList[-1])
+        supList.pop(-1)
+    inds_sup = []
+    for sl in supList:
+        sub_now = np.array(subList)[sl]
+        inds_=[]
+        for sn in sub_now:
+            inds_.extend(sn)
+        inds_sup.append(inds_)
+
+    subDirs = []
+    for iSub, inds_ in enumerate(inds_sup):
+        sn = f'{subPrefix}_{iSub+1}'
+        dst = os.path.join(fileDir, sn)
+        os.makedirs(dst, exist_ok=True)
+        subDirs.append(dst)
+        print(f'Moving into {sn}, {iSub+1}/{len(inds_sup)}')
+        foo = [dask.delayed(sh.move)(fp, dst) for fp in filePaths[inds_]]
+        dask.compute(*foo)
+    return subDirs
 
 
 def strFromHDF(hFile, refList):

@@ -94,6 +94,8 @@ class SvdGmm(object):
                       random_state=self.random_state_).fit(features)
             features = pca.transform(features)
             pca.n_components = features.shape[1]
+        else:
+            pca = None
         gmm = GMM(n_components=self.n_gmm_, random_state=self.random_state_,
                   covariance_type=self.covariance_type_, **self.gmm_kwargs_)
         gmm = gmm.fit(features)

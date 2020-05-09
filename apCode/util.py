@@ -1,6 +1,8 @@
 
-#from apCode.FileTools import sublistsFromList
 import numpy as np
+# import sys as _sys
+# _sys.path.append(r'\\dm11\koyamalab\python\code')
+# from apCode.FileTools import sublistsFromList
 
 class BootstrapStat(object):
     def __init__(self, func='mean', combSize=2, nCombs=None, replace=False):

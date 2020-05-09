@@ -2,7 +2,7 @@
 """
 Created on Tue Oct  9 15:36:14 2018
 
-@author: pujalaa
+@author: pujalaa (avinashpujala@gmail.com)
 """
 
 import numpy as np
@@ -11,6 +11,8 @@ import os
 import sys
 import h5py
 import re
+import glob
+
 sys.path.append(r'\\dm11\koyamalab\code\python\code')
 import apCode.volTools as volt  # noqa: E402
 from apCode import util  # noqa: E402
@@ -19,7 +21,104 @@ import apCode.SignalProcessingTools as spt  # noqa: E402
 from apCode import hdf  #noqa: E402
 
 
-def cleanTailAngles(ta, svd=None, nComps: int = 3, nWaves=5, dt=1/1000,
+def ca_tifs_to_hdf(fishDir, hFilePath=None, grpName='ca_all',
+                   regex='\d{3}_[h/t]', q_min=10, verbose=True):
+    """
+    Given the directory to data from a single fish, reads all the tif images in
+    a subdirectory 'fishir/d{3}_[h/t]/ca/' and writes them to an already existing
+    hdf file in the path or, if absent, a newly created and timestamped one.
+    The paths to the tif files can be found in hdfFile['filePaths_ca'], whereas the
+    images and all other relevant info can be found in hdfFile['/ca/']
+    Parameters
+    ----------
+    fishDir: str
+        Root directory containing all the image subdirectories
+    hFilePath: str or None
+        Full path to an existing file or if None, then the program automatically
+        looks for an HDF file in the path, and if absent, creates one with
+        the name procData_{timestamp}.h5
+    grpName: str
+        The name of the grop in the HDF file under which to store all the relevant
+        inforation.
+     q_min: scalar or None
+        If scalar, then percentile value to use to compute offset in each
+        image and subtract. If None, skips this step.
+    verbose: bool
+        Verbosity when appending datasets to HDF file
+    Returns
+    -------
+    hFilePath: str
+        Path the to HDF file where the images and related info was stored
+    """
+    perc = lambda x, axis: np.percentile(x, q_min, axis=axis)
+    compute_off = lambda slc: np.apply_over_axes(perc, slc, [-2, -1])
+    def remove_off(slc):
+        """
+        slc: (nTimePts, *imgDims)
+        """
+        off = compute_off(slc)
+        slc = slc-off
+        slc = slc[None, ...]
+        return slc
+
+    imgDirs = glob.glob(os.path.join(fishDir, '*/ca/'), recursive=True)
+    if len(imgDirs)==0:
+        print('No Ca image subdirectories found, check path')
+        return None
+    else:
+        print(f'{len(imgDirs)} Ca subdirectories found')
+    if hFilePath is None:
+        hFilePath = glob.glob(os.path.join(fishDir, 'procData*.h5'))[-1]
+        if len(hFilePath)==0:
+            hFilePath = os.path.join(fishDir,
+                                     f'procData_{util.timestamp()}.h5')
+    imgs_full = []
+    for iSession, imgDir in enumerate(imgDirs):
+        print(f'Session # {iSession}, {imgDir}')
+        imgs_ca, tifInfo = volt.dask_array_from_scanimage_tifs(imgDir)
+        imgs_full.append(imgs_ca[:, 1:, ...]) # Get rid of useless top slice
+        print('Baseline adjusting imgs_ca')
+        nImgs = len(imgs_ca)
+        filePaths = util.to_ascii(tifInfo['filePaths'])
+        print(f'{len(filePaths)} tif files in directory')
+        sessionNum = np.array([iSession]*nImgs)
+        stimLoc = np.array(re.findall(regex, imgDir)*nImgs)
+        stimLoc = util.to_ascii(stimLoc)
+        keys = [f'filePaths_{grpName}', f'{grpName}/sessionNum',
+                f'{grpName}/stimLoc']
+        vals = [filePaths, sessionNum, stimLoc]
+        with h5py.File(hFilePath, mode='a') as hFile:
+            if iSession==0:
+                if grpName in hFile:
+                    del hFile[grpName]
+                if f'filePaths_{grpName}' in hFile:
+                    del hFile[f'filePaths_{grpName}']
+            for key, val in zip(keys, vals):
+                hFile = hdf.createOrAppendToHdf(hFile, key, val,
+                                                verbose=verbose)
+
+    imgs_full = dask.array.concatenate(imgs_full)
+    imgs_full = imgs_full.swapaxes(0, 1) # Put z dim before time
+    stackDims = imgs_full.shape
+    dtype = imgs_full.dtype
+    if q_min is not None:
+        print('Correcting offset...')
+        imgs = []
+        for iSlc, slc in enumerate(imgs_full):
+            slc_del = dask.delayed(remove_off)(slc)
+            slc_arr = dask.array.from_delayed(slc_del,
+                                              (1, *stackDims[1:]),
+                                              dtype=dtype)
+            imgs.append(slc_arr)
+        imgs = dask.array.concatenate(imgs)
+    else:
+        imgs = imgs_full
+    print(f'Writing dask array to hdf file at\n{hFilePath}')
+    imgs.to_hdf5(hFilePath, f'/{grpName}/imgs_raw')
+    return hFilePath
+
+
+def cleanTailAngles(ta, svd=None, nComps: int = 3, nWaves=5, dt=1/500,
                     lpf=60):
     """
     Given the array of tail angles along the fish across time, and optionally,
@@ -1280,7 +1379,7 @@ def impulse_trains_from_labels(labels, ta, labels_sel=None,
     return np.array(irTrain), np.array(names)
 
 
-def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
+def midlinesFromImages(images, n_jobs=32, orientMidlines=True, verbose=False):
     """
     Returns midlines from fish images generated by fishImgsForMidline
     Parameters
@@ -1295,12 +1394,12 @@ def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
     Returns
     -------
     midlines: array, ([T], n, 2)
-        Array of midlines with the same number of points in each midline because
-        of smoothing and interpolation
+        Array of midlines with the same number of points in each midline
+        because of smoothing and interpolation
     ml_dist: tuple, (2,)
         First element is raw, pruned, and sorted midlines
-        Second element is cumulative sum of distances (in pixel lengths) between
-        successive midline points
+        Second element is cumulative sum of distances (in pixel lengths)
+        between successive midline points
     """
     from skimage.morphology import thin
     import apCode.geom as geom
@@ -1308,11 +1407,13 @@ def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
     from dask import delayed, compute
     # import os
 
-    def getDists(point, points): return np.sum((point.reshape(1, -1)-points)**2, axis=1)**0.5
+    def getDists(point, points):
+        return np.sum((point.reshape(1, -1)-points)**2, axis=1)**0.5
 
     def identifyPointTypesOnMidline(ml):
         dist_adj = np.sqrt(2)+0.01
-        L = np.array([len(np.where(getDists(ml_, ml) < dist_adj)[0]) for ml_ in ml])
+        L = np.array([len(np.where(getDists(ml_, ml) < dist_adj)[0])
+                      for ml_ in ml])
         endInds = np.where(L == 2)[0].astype(int)
         branchInds = np.where(L == 4)[0].astype(int)
         middleInds = np.where(L == 3)[0].astype(int)
@@ -1330,7 +1431,8 @@ def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
         if len(inds_end) == 0:
             ind_start = ind_brightest
         else:
-            ind_start = inds_end[np.argmin(getDists(ml[ind_brightest, :], ml[inds_end, :]))]
+            ind_start = inds_end[np.argmin(getDists(ml[ind_brightest, :],
+                                                    ml[inds_end, :]))]
         ord_sort = geom.sortPointsByWalking(ml, ref=ml[ind_start, :])
         ml_sort = ml[ord_sort, :]
         d = np.sum(np.diff(ml_sort, axis=0)**2, axis=1)**0.5
@@ -1375,7 +1477,8 @@ def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
                                        for img in images]))
     midlines = np.array(midlines)
     if orientMidlines:
-        print('Orienting midlines')
+        if verbose:
+            print('Orienting midlines')
         midlines = orientMidlines_(midlines)
     return midlines, ml_dist
 
@@ -3372,7 +3475,7 @@ def tailAngles_from_hdf_concatenated_by_trials(hFileDirs, hFileExt='h5',
 
 def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', filtSize=2.5,
                                      smooth=20, kind='cubic', n=50,
-                                     otsuMult=1, verbose=0):
+                                     otsuMult=1, verbose=False):
     """
     Given an array of images or the path to a directory of images (with
     single fish per image), segments the fish using a trained U net, and
@@ -3455,13 +3558,15 @@ def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', filtSize=2.5,
     if verbose:
         print('Interpolating midlines to sample uniformly to the same' +
               ' length...')
-    print('2D interpolation...')
+        print('2D interpolation...')
     midlines_interp = geom.interpolateCurvesND(midlines, mode='2D', N=50)
-    print('Curve smoothening...')
+    if verbose:
+        print('Curve smoothening...')
     midlines_interp = np.asarray(compute(
-        *[delayed(geom.smoothen_curve)(_, smooth=smooth) for _ in
+        *[delayed(geom.smoothen_curve)(_, smooth_fixed=smooth) for _ in
           midlines_interp], scheduler='processes'))
-    print('Length equalization')
+    if verbose:
+        print('Length equalization')
     midlines_interp = geom.equalizeCurveLens(midlines_interp)
 
     if verbose:

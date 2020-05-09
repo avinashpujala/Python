@@ -31,7 +31,7 @@ def angleBetween2DVectors(v1, v2):
 
 
 def animate_images(images, fps=30, display=True, save=False, savePath=None,
-                   path_to_ffmpeg = r'V:\Code\FFMPEG\bin\ffmpeg.exe',
+                   path_to_ffmpeg = r'\\dm11\koyamalab\\Code\FFMPEG\bin\ffmpeg.exe',
                    fig_size=(10, 10), **kwargs):
     """
     Movie from an image stack

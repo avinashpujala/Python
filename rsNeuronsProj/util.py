@@ -172,6 +172,60 @@ def append_latency_to_df(df, var='swimVel', nKer=100, ind_start=50, zThr=1,
     df = df.assign(onsetLatency=lats)
     return df
 
+def apply_to_imgs_and_save(imgDir, func='fliplr', splitStr='Fish'):
+    """
+    Apply some function to images in specified directory and save.
+    After function is applied the output must still be 2D/3D.
+    Parameters
+    ----------
+    imgDir: str
+        Image directory
+    func: str or function
+        Function to apply to images. If str, then must be a function in
+        numpy
+    splitStr: str
+        Substring where to split path. The images will be saved at the level
+        above where the path is split.
+    Returns
+    -------
+    saveDir: str
+        Directory where images were saved
+    """
+    from apCode import util
+    import apCode.FileTools as ft
+    import apCode.volTools as volt
+
+    if isinstance(func, str):
+        func = eval(f'np.{func}')
+    strList = os.path.abspath(imgDir).split("\\")
+    ind = util.findStrInList(splitStr, strList, case_sensitive=False)[0]
+    strRep = strList[ind]
+    rootDir = os.path.join(*np.array(strList)[:ind])
+    fn = ft.subDirsInDir(rootDir)
+    nDir = len(fn)
+    sfx = strRep.replace(splitStr, f'{splitStr}{nDir+1}')
+    saveDir = os.path.join(rootDir, sfx)
+    os.makedirs(saveDir, exist_ok=True)
+    print('Reading images into dask array...')
+    imgs = volt.dask_array_from_image_sequence(imgDir)
+    print(f'{imgs.shape[0]} images!')
+    blockSize= np.minimum(750, (imgs.shape[0]//10)+1)
+    print(f'Block size = {blockSize}')
+    print(f'Transforming and saving images to\n{saveDir}')
+    inds = np.arange(len(imgs))
+    inds_list = ft.sublistsFromList(inds, blockSize)
+    nBlocks = len(inds_list)
+    for iBlock, inds_ in enumerate(inds_list):
+        print(f'Block # {iBlock+1}/{nBlocks}')
+        inds_now = np.array(inds_)
+        imgs_ = imgs[inds_now].compute()
+        imgs_ = np.array([func(img) for img in imgs_])
+        imgNames = [r'f{}_{:06d}.bmp'.format(nDir+1, ind) for ind in inds_now]
+        volt.img.saveImages(imgs_, imgDir=saveDir, imgNames=imgNames)
+    return saveDir
+
+
+
 def bootstrap_df(df, keys, vals, mult=2):
     """Bootstrap subset of dataframe filtered by the specified
     keys and values
