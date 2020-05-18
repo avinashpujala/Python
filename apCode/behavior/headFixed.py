@@ -118,7 +118,7 @@ def ca_tifs_to_hdf(fishDir, hFilePath=None, grpName='ca_all',
     return hFilePath
 
 
-def cleanTailAngles(ta, svd=None, nComps: int = 3, nWaves=5, dt=1/500,
+def cleanTailAngles(ta, svd=None, nComps: int = 3, nWaves=8, dt=1/500,
                     lpf=60):
     """
     Given the array of tail angles along the fish across time, and optionally,
@@ -418,7 +418,7 @@ def estimateHeadSideInFixed(img):
 
 def extractAndStoreBehaviorData_singleFish(fishPath, uNet=None, hFilePath=None,
                                            regex=r'\d{1,5}_[ht]',
-                                           imgExt='bmp'):
+                                           imgExt='bmp', **unet_kwargs):
     """
     Parameters
     ----------
@@ -436,6 +436,7 @@ def extractAndStoreBehaviorData_singleFish(fishPath, uNet=None, hFilePath=None,
         For e.g., "001_h", "002_t", etc.
     imgExt: str
         Extension of the behavior image files.
+    **unet_kwargs: e.g. batch_size; see unet.predict
     Returns
     -------
     hFilePath: Full path to the HDF file object where behavior data is stored
@@ -478,23 +479,20 @@ def extractAndStoreBehaviorData_singleFish(fishPath, uNet=None, hFilePath=None,
             behavDirs = np.array(roots)[inds]
             nTrls = len(inds)
             print(f'{nTrls} behavior directories found in {sd}')
-#            stimLoc.extend([hort]*nTrls)
-            stimLoc.extend([sd_now]*nTrls)
+            stimLoc.extend(np.repeat(sd_now, nTrls))
+            # stimLoc.extend([sd_now]*nTrls)
+            keys = ['images_fish', 'midlines', 'inds_kept_midlines',
+                    'tailAngles']
             for iTrl, bd in enumerate(behavDirs):
                 print(f'Trl # {iTrl+1}/{nTrls}')
                 out = hf.tailAnglesFromRawImagesUsingUnet(behavDirs[iTrl],
-                                                          uNet)
+                                                          uNet, **unet_kwargs)
                 if (iSub == 0) & (iTrl == 0) & ('behav' in hFile):
                     del hFile['behav']
-                keyName = 'behav/images_prob'
-                hFile = hdf.createOrAppendToHdf(hFile, keyName,
-                                                out['I_prob'])
-                keyName = 'behav/tailAngles'
-                hFile = hdf.createOrAppendToHdf(hFile, keyName,
-                                                out['tailAngles'])
-                keyName = 'behav/midlines_interp'
-                hFile = hdf.createOrAppendToHdf(hFile, keyName,
-                                                out['midlines']['interp'])
+                for key in keys:
+                    keyName = f'behav/{key}'
+                    val = out[key]
+                    hFile = hdf.createOrAppendToHdf(hFile, keyName, val)
         hFile.create_dataset('behav/stimLoc', data=util.to_ascii(stimLoc))
     return hFilePath
 
@@ -2420,7 +2418,7 @@ def readScanImageTif(tifPath):
 
 
 def register_piecewise_from_hdf(hFilePath, key_in='ca_raw', key_out='ca_reg',
-                                n_jobs=31, filtSize=1, patchPerc=(40, ),
+                                n_jobs=31, filtSize=1, patchPerc=(60, ),
                                 patchOverlapPerc=(70, ), maxShiftPerc=(15, )):
     """
     Piecewise rigid registration
@@ -3473,9 +3471,12 @@ def tailAngles_from_hdf_concatenated_by_trials(hFileDirs, hFileExt='h5',
     return dic
 
 
-def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', filtSize=2.5,
-                                     smooth=20, kind='cubic', n=50,
-                                     otsuMult=1, verbose=False):
+def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', flt_diam=11,
+                                     flt_sigmaSpace=1, smooth=20,
+                                     kind='cubic', n=50, prob_thr=0.5,
+                                     otsuMult=1, choose_region_by='largest',
+                                     verbose=False,
+                                     **unet_kwargs):
     """
     Given an array of images or the path to a directory of images (with
     single fish per image), segments the fish using a trained U net, and
@@ -3489,9 +3490,9 @@ def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', filtSize=2.5,
         Trained U net model for segmenting fish.
     imgExt: string
         Filters for images with this extension
-    filtSize: scalar
+    flt_diam, filt_sigmaSpace: ints
         Size of convolution kernel used to smooth images for detecting and
-        possibly coalescing fish blobs
+        possibly coalescing fish blobs. See fsb.fish_imgs_from_raw
     smooth: scalar
         Smoothing factor to apply to raw midlines extracting from image
         using "thinning" procedure
@@ -3524,9 +3525,10 @@ def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', filtSize=2.5,
     import os
     import numpy as np
     import apCode.behavior.FreeSwimBehavior as fsb
+    from apCode.SignalProcessingTools import interp
 #        import apCode.volTools as volt
-    from apCode import geom
-    from dask import delayed, compute
+    # from apCode import geom
+    # from dask import delayed, compute
 
     if isinstance(images, str):
         if os.path.exists(images):
@@ -3539,43 +3541,27 @@ def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', filtSize=2.5,
 
     if verbose:
         print('Predicting on images...')
-    uShape = uNet.input_shape[1:3]
-    images_prob = np.squeeze(uNet.predict(fsb.prepareForUnet_1ch(images,
-                                                                 sz=uShape)))
-    images_prob = volt.img.resize(images_prob, images.shape[1:],
-                                  preserve_dtype=True,
-                                  preserve_range=True)
-
-    if verbose:
-        print('Processing images for midline detection...')
-    images_fish = fishImgsForMidline(images_prob, filtSize=filtSize,
-                                     otsuMult=otsuMult)
+    images_fish, images_prob = fsb.fish_imgs_from_raw(images, uNet,
+                                                      diam=flt_diam,
+                                                      bgd=None, prob_thr=prob_thr,
+                                                      sigma_space=flt_sigmaSpace,
+                                                      choose_region_by=choose_region_by,
+                                                      **unet_kwargs)
 
     if verbose:
         print('Computing midlines...')
-    midlines = midlinesFromImages(images_fish)[0]
-
-    if verbose:
-        print('Interpolating midlines to sample uniformly to the same' +
-              ' length...')
-        print('2D interpolation...')
-    midlines_interp = geom.interpolateCurvesND(midlines, mode='2D', N=50)
-    if verbose:
-        print('Curve smoothening...')
-    midlines_interp = np.asarray(compute(
-        *[delayed(geom.smoothen_curve)(_, smooth_fixed=smooth) for _ in
-          midlines_interp], scheduler='processes'))
-    if verbose:
-        print('Length equalization')
-    midlines_interp = geom.equalizeCurveLens(midlines_interp)
-
+    midlines, inds_kept = fsb.track.midlines_from_binary_imgs(images_fish,
+                                                              n_pts=n)
     if verbose:
         print('Computing curvatures...')
-    kappas = fsb.track.curvaturesAlongMidline(midlines_interp, n=n)
-    tailAngles = np.cumsum(kappas, axis=0)
-    midlines = dict(raw=midlines, interp=midlines_interp)
-    out = dict(midlines=midlines, I_fish=images_fish, I_prob=images_prob,
-               tailAngles=tailAngles)
+    kappas = fsb.track.curvaturesAlongMidline(midlines, n=n)
+    ta = np.cumsum(kappas, axis=0)
+    ta_interp = np.ones((ta.shape[0], images_fish.shape[0]))*np.nan
+    ta_interp[:, inds_kept] = ta
+    ta_interp = interp.nanInterp2d(ta_interp, method='nearest')
+    out = dict(midlines=midlines, images_fish=images_fish,
+               images_prob=images_prob, tailAngles=ta_interp,
+               inds_kept_midlines=inds_kept)
     return out
 
 

@@ -365,7 +365,8 @@ def expand_on_bends(df_trl, Fs=500, tPre_ms=100, bendThr=10, minLat_ms=5,
             bendSampleIdxInTrl=pks
             bendAmp = y[pks]
             bendAmp_abs = np.abs(bendAmp)
-            bendAmp_rel = np.insert(np.abs(np.diff(bendAmp)), 0, bendAmp[0])
+            bendAmp_rel = np.insert(np.abs(np.diff(bendAmp)), 0,
+                                    np.abs(bendAmp[0]))
             bendInt_ms = np.gradient(pks)*(1/Fs)*1000
             onset_ms = (pks[0]-nPre+1)*(1/Fs)*1000
         else:
@@ -375,7 +376,7 @@ def expand_on_bends(df_trl, Fs=500, tPre_ms=100, bendThr=10, minLat_ms=5,
             bendsampleIdxInTrl, onset_ms = [np.nan for _ in range(2)]
         dic = dict(trlIdx_glob=iTrl, nBends=nBends, bendIdx=bendIdx,
                    bendSampleIdxInTrl=bendSampleIdxInTrl, bendAmp=bendAmp,
-                   bendAmp_abs=bendAmp, bendAmp_rel=bendAmp_rel,
+                   bendAmp_abs=bendAmp_abs, bendAmp_rel=bendAmp_rel,
                    bendInt_ms=bendInt_ms, onset_ms=onset_ms)
         df_now = pd.DataFrame(dic)
         df_bend.append(df_now)

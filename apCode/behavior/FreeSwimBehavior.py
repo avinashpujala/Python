@@ -364,6 +364,7 @@ def copy_images_for_training(imgsOrPath, cropSize=None,
     """
     import apCode.volTools as volt
     from apCode import util
+    import time
     daskArr = False
     if isinstance(imgsOrPath, str):
         imgs = volt.dask_array_from_image_sequence(imgsOrPath)
@@ -410,6 +411,13 @@ def copy_images_for_training(imgsOrPath, cropSize=None,
         path_save = os.path.join(savePath, name_dir)
         if not os.path.exists(path_save):
             os.mkdir(path_save)
+        # imgNames = []
+        # for _ in range(imgs_crop.shape[0]):
+        #     time.sleep(1e-5)
+        #     imgName = 'img_' + str(time.time()).replace(".", "-") + '.bmp'
+        #     imgNames.append(imgName)
+        # imgNames = np.array(imgNames)
+        # volt.img.saveImages(imgs_crop, imgDir=path_save, imgNames=imgNames)
         volt.img.saveImages(imgs_crop, imgDir=path_save)
         print(f'Saved images at\n {path_save}')
     return imgs_crop
@@ -558,8 +566,10 @@ def filterFishData(data,dt= 1./1000,Wn=100, btype = 'low', \
     return data_flt
 
 
-def fish_imgs_from_raw(imgs, unet, bgd=None, prob_thr=0.55, diam=11,
-                       sigma_space=1, method='fast', **unet_predict_kwargs):
+def fish_imgs_from_raw(imgs, unet, bgd=None, prob_thr=0.52, diam=11,
+                       sigma_space=1, method='fast',
+                       choose_region_by='brightest',
+                       **unet_predict_kwargs):
     """
     Returns prob and fish blob binary images when given raw images and a
     trained U net
@@ -579,6 +589,11 @@ def fish_imgs_from_raw(imgs, unet, bgd=None, prob_thr=0.55, diam=11,
     sigma_space: int
         cv2 bilteral filter parameter
     method: str, 'fast' or 'slow'
+    choose_region_by: str, ('brightest' or 'largest')
+        How to choose a single candidate fish blob from probability images.
+        'brightest': chooses the blob with brightest pixel (better for
+                     free-swim condition)
+        'largest': chooses largest blob (better for head-fixed condition)
     unet_predict_kwargs: dict
         Keyword argument for unet.predict function
     Returns
@@ -619,10 +634,17 @@ def fish_imgs_from_raw(imgs, unet, bgd=None, prob_thr=0.55, diam=11,
     def _fish_img_from_raw_fast(img_prob, img_raw, prob_thr):
         mask = (img_prob > prob_thr).astype('uint8')
         img_lbl = label(mask)
-        regions = regionprops(img_lbl, -img_raw*img_prob)
+        if choose_region_by.lower()=='brightest':
+            regions = regionprops(img_lbl, -img_raw*img_prob)
+        else:
+            regions = regionprops(img_lbl)
         if len(regions) > 1:
-            max_ints = np.array([region.max_intensity for region in regions])
-            ind = np.argmax(max_ints)
+            if choose_region_by.lower() =='brightest':
+                max_ints = np.array([region.max_intensity
+                                     for region in regions])
+                ind = np.argmax(max_ints)
+            else:
+                ind = np.argmax([region.area for region in regions])
             region = regions[ind]
         elif len(regions) == 1:
             region = regions[0]
@@ -637,13 +659,13 @@ def fish_imgs_from_raw(imgs, unet, bgd=None, prob_thr=0.55, diam=11,
     imgs_flt = volt.filter_bilateral(imgs_prob, diam=diam,
                                      sigma_space=sigma_space)
     if bgd is not None:
-        if bgd is 'compute':
+        if bgd == 'compute':
             bgd = track.computeBackground(imgs)
         imgs_back = bgd-imgs
     else:
         imgs_back = imgs
     imgs_fish = []
-    if method is 'slow':
+    if method == 'slow':
         imgs_prob2 = prob_images_with_unet(imgs_back*imgs_prob, unet,
                                            **unet_predict_kwargs)
         imgs_flt2 = volt.filter_bilateral(imgs_prob2, diam=diam,
@@ -1626,7 +1648,7 @@ def prob_images_with_unet(imgs, unet, **unet_predict_kwargs):
                                         **unet_predict_kwargs))
 
     if resized:
-        print('Resizing back...')
+        # print('Resizing back...')
         imgs_prob = volt.img.resize(imgs_prob, imgDims)
     return imgs_prob
 
@@ -2309,10 +2331,12 @@ def tail_angles_from_raw_imgs_using_unet_resume(imgDir, unet, ext='bmp',
 
 def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
                                          motion_thresh_perc=None,
-                                         nImgs_for_back=1000, block_size=750,
+                                         bgd=None, nImgs_for_back=1000,
+                                         block_size=750,
                                          search_radius=10, n_iter=2,
                                          cropSize=140, midlines_nPts=50,
-                                         midlines_smooth=20, resume=False):
+                                         midlines_smooth=20, resume=False,
+                                         **unet_predict_kwargs):
     """
     Process images using U net upto the extraction of tail angles and save to
     an existing or new HDF file in a subfolder ('proc') of the image diretory
@@ -2373,8 +2397,9 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
         if 'nImgs_total' in hFile:
             del hFile['nImgs_total']
         hFile.create_dataset('nImgs_total', data=np.array(nImgs_total))
-        print('Getting background image')
-        bgd = track.computeBackground(imgs, n=nImgs_for_back).compute()
+        if bgd is None:
+            print('Getting background image')
+            bgd = track.computeBackground(imgs, n=nImgs_for_back).compute()
         if 'img_background' in hFile:
             del hFile['img_background']
         hFile = createOrAppendToHdf(hFile, 'img_background', bgd,
@@ -2418,7 +2443,8 @@ def tail_angles_from_raw_imgs_using_unet(imgDir, unet, ext='bmp', imgInds=None,
             print(f'Block # {iBlock+1}/{len(inds_blocks)}')
             imgs_now = imgs[inds_].compute()
             imgs_fish, imgs_prob = fish_imgs_from_raw(imgs_now, unet, bgd=bgd,
-                                                      verbose=0)
+                                                      verbose=0,
+                                                      **unet_predict_kwargs)
             imgs_fish_grad = -imgs_now*imgs_fish
             fp = track.findFish(imgs_fish_grad, back_img=None,
                                 r=search_radius, n_iter=n_iter)

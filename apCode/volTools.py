@@ -1217,7 +1217,8 @@ def interp3d(vol, dx = 1, dy = 1, dz = 0.25, method = 'linear'):
 
 def ipca(images, components:int=50, batch:int=1000):
     """
-    Iterative Principal Component analysis, see sklearn.decomposition.incremental_pca.IncrementalPCA
+    Iterative Principal Component analysis, see
+    sklearn.decomposition.IncrementalPCA
     Parameters
     ----------
     components (default 50) = number of independent components to return
@@ -1234,13 +1235,13 @@ def ipca(images, components:int=50, batch:int=1000):
     https://caiman.readthedocs.io/en/master/index.html#
     """
     import numpy as np
-    from sklearn.decomposition.incremental_pca import IncrementalPCA
+    from sklearn.decomposition import IncrementalPCA
     # vectorize the images
     num_frames, h, w = np.shape(images)
     frame_size = h * w
     frame_samples = np.reshape(images, (num_frames, frame_size)).T
 
-    # run IPCA to approxiate the SVD
+    # run IPCA to approximate the SVD
     ipca_f = IncrementalPCA(n_components=components, batch_size=batch)
     ipca_f.fit(frame_samples)
 
