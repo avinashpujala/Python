@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 class GAN():
-    def __init__(self, input_shape, latent_dim, optimizer='default'):
+    def __init__(self, input_shape=(750, ), latent_dim=100, optimizer='default'):
         # self.img_rows = 28
         # self.img_cols = 28
         # self.channels = 1
@@ -33,9 +33,9 @@ class GAN():
 
         # Build and compile the discriminator
         self.discriminator = self.build_discriminator()
-        self.discriminator.compile(loss='binary_crossentropy',
-            optimizer=optimizer,
-            metrics=['accuracy'])
+        self.discriminator.compile(loss='binary_crossentropy', 
+                                   optimizer=optimizer, 
+                                   metrics=['accuracy'])
 
         # Build the generator
         self.generator = self.build_generator()
@@ -57,9 +57,7 @@ class GAN():
 
 
     def build_generator(self):
-
         model = Sequential()
-
         model.add(Dense(256, input_dim=self.latent_dim))
         model.add(LeakyReLU(alpha=0.2))
         model.add(BatchNormalization(momentum=0.8))
@@ -71,8 +69,8 @@ class GAN():
         model.add(BatchNormalization(momentum=0.8))
         model.add(Dense(np.prod(self.img_shape), activation='tanh'))
         model.add(Reshape(self.img_shape))
-
-        model.summary()
+        
+        # model.summary()
 
         noise = Input(shape=(self.latent_dim,))
         img = model(noise)
@@ -82,9 +80,11 @@ class GAN():
     def build_discriminator(self):
 
         model = Sequential()
-
-        model.add(Flatten(input_shape=self.img_shape))
-        model.add(Dense(512))
+        if len(self.img_shape)>2:
+            model.add(Flatten(input_shape=self.img_shape))
+            model.add(Dense(512))
+        else:
+            model.add(Dense(512, input_shape=self.img_shape))        
         model.add(LeakyReLU(alpha=0.2))
         model.add(Dense(256))
         model.add(LeakyReLU(alpha=0.2))
@@ -106,7 +106,7 @@ class GAN():
         X_min = X_train.min()
         X_max = X_train.max()
         X_train = -1 + 2*(X_train-X_min)/(X_max-X_min)
-        X_train = X_train[..., None]
+        # X_train = X_train
 
         # Adversarial ground truths
         valid = np.ones((batch_size, 1))

@@ -31,7 +31,7 @@ def angleBetween2DVectors(v1, v2):
 
 
 def animate_images(images, fps=30, display=True, save=False, savePath=None,
-                   path_to_ffmpeg = r'V:\Code\FFMPEG\bin\ffmpeg.exe',
+                   path_to_ffmpeg = r'\\dm11\koyamalab\\Code\FFMPEG\bin\ffmpeg.exe',
                    fig_size=(10, 10), **kwargs):
     """
     Movie from an image stack
@@ -1217,7 +1217,8 @@ def interp3d(vol, dx = 1, dy = 1, dz = 0.25, method = 'linear'):
 
 def ipca(images, components:int=50, batch:int=1000):
     """
-    Iterative Principal Component analysis, see sklearn.decomposition.incremental_pca.IncrementalPCA
+    Iterative Principal Component analysis, see
+    sklearn.decomposition.IncrementalPCA
     Parameters
     ----------
     components (default 50) = number of independent components to return
@@ -1234,13 +1235,13 @@ def ipca(images, components:int=50, batch:int=1000):
     https://caiman.readthedocs.io/en/master/index.html#
     """
     import numpy as np
-    from sklearn.decomposition.incremental_pca import IncrementalPCA
+    from sklearn.decomposition import IncrementalPCA
     # vectorize the images
     num_frames, h, w = np.shape(images)
     frame_size = h * w
     frame_samples = np.reshape(images, (num_frames, frame_size)).T
 
-    # run IPCA to approxiate the SVD
+    # run IPCA to approximate the SVD
     ipca_f = IncrementalPCA(n_components=components, batch_size=batch)
     ipca_f.fit(frame_samples)
 
@@ -1612,6 +1613,7 @@ class Register():
         self._patchPerc = patchPerc
         self._patchOverlapPerc = patchOverlapPerc
         self._maxShiftPerc = maxShiftPerc
+        self.cwd_ = os.getcwd()
 
     @staticmethod
     def correlate_to_ref(images, ref=None):
@@ -1698,6 +1700,7 @@ class Register():
             print('Registering with caiman...')
             import caiman as cm
             from caiman.motion_correction import MotionCorrect
+            import tifffile as tff
             cm.stop_server()
             n_processes = np.maximum(np.minimum(int(psutil.cpu_count()),
                                                 images.shape[0]-2), 1)
@@ -1738,7 +1741,10 @@ class Register():
                 pw_rigid = True
             else:
                 pw_rigid = False
-            fname_now = cm.movie(images).save('temp.mmap', order='C')
+            cwd = os.getcwd()
+            fname_now = os.path.join(cwd, 'tmp.tif')
+            self.fname_ = fname_now
+            tff.imsave(fname_now, data=images)
             mc = MotionCorrect([fname_now], dview=dview, max_shifts=max_shifts,
                                strides=strides, overlaps=overlaps,
                                max_deviation_rigid=max_deviation_rigid,

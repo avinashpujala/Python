@@ -4,7 +4,7 @@ Created on Sat Oct  6 03:42:15 2018
 
 @author: pujalaa
 """
-__codeDir = r'V:\Code\Python\code'
+__codeDir = r'\\dm11\koyamalab\Code\Python\code'
 import sys as __sys
 __sys.path.append(__codeDir)
 #from apCode.volTools import pol2cart, cart2pol

@@ -5,9 +5,9 @@ import sys
 from dask import delayed, compute
 import pandas as pd
 
-sys.path.append(r'v:/code/python/code')
+sys.path.append(r'\\dm11\koyamalab\code\python\code')
 import apCode.behavior.FreeSwimBehavior as fsb # noqa E402
-from apCode.tanimotom import besselImaging as bing # noqa E402
+# from apCode.tanimotom import besselImaging as bing # noqa E402
 
 def add_suffix_to_paths(paths, suffix='proc'):
     """
@@ -160,7 +160,7 @@ def append_latency_to_df(df, var='swimVel', nKer=100, ind_start=50, zThr=1,
     scaler = Scaler(with_mean=False)
     swimVel_trl = scaler.fit_transform(swimVel_ser[:, None]).reshape(nTrls, -1)
     lats = np.ones((nTrls, ))*np.nan
-    latsToFirstPk = lats.copy()
+    # latsToFirstPk = lats.copy()
     for iTrl, trl in enumerate(swimVel_trl):
         onInds = levelCrossings(trl, thr=zThr)[0]
         if len(onInds)>0:
@@ -172,11 +172,99 @@ def append_latency_to_df(df, var='swimVel', nKer=100, ind_start=50, zThr=1,
     df = df.assign(onsetLatency=lats)
     return df
 
+def apply_to_imgs_and_save(imgDir, func='fliplr', splitStr='Fish'):
+    """
+    Apply some function to images in specified directory and save.
+    After function is applied the output must still be 2D/3D.
+    Parameters
+    ----------
+    imgDir: str
+        Image directory
+    func: str or function
+        Function to apply to images. If str, then must be a function in
+        numpy
+    splitStr: str
+        Substring where to split path. The images will be saved at the level
+        above where the path is split.
+    Returns
+    -------
+    saveDir: str
+        Directory where images were saved
+    """
+    from apCode import util
+    import apCode.FileTools as ft
+    import apCode.volTools as volt
+
+    if isinstance(func, str):
+        func = eval(f'np.{func}')
+    strList = os.path.abspath(imgDir).split("\\")
+    ind = util.findStrInList(splitStr, strList, case_sensitive=False)[0]
+    strRep = strList[ind]
+    rootDir = os.path.join(*np.array(strList)[:ind])
+    fn = ft.subDirsInDir(rootDir)
+    nDir = len(fn)
+    sfx = strRep.replace(splitStr, f'{splitStr}{nDir+1}')
+    saveDir = os.path.join(rootDir, sfx)
+    os.makedirs(saveDir, exist_ok=True)
+    print('Reading images into dask array...')
+    imgs = volt.dask_array_from_image_sequence(imgDir)
+    print(f'{imgs.shape[0]} images!')
+    blockSize= np.minimum(750, (imgs.shape[0]//10)+1)
+    print(f'Block size = {blockSize}')
+    print(f'Transforming and saving images to\n{saveDir}')
+    inds = np.arange(len(imgs))
+    inds_list = ft.sublistsFromList(inds, blockSize)
+    nBlocks = len(inds_list)
+    for iBlock, inds_ in enumerate(inds_list):
+        print(f'Block # {iBlock+1}/{nBlocks}')
+        inds_now = np.array(inds_)
+        imgs_ = imgs[inds_now].compute()
+        imgs_ = np.array([func(img) for img in imgs_])
+        imgNames = [r'f{}_{:06d}.bmp'.format(nDir+1, ind) for ind in inds_now]
+        volt.img.saveImages(imgs_, imgDir=saveDir, imgNames=imgNames)
+    return saveDir
+
+
+
+def bootstrap_df(df, keys, vals, mult=2):
+    """Bootstrap subset of dataframe filtered by the specified
+    keys and values
+    Parameters
+    ----------
+    df: pandas datframe
+    keys, vals: lists of key and values
+        These are used to filter the dataframe and boostrap only that subset.
+        For e.g., if keys = ['ablationGroup', 'Treatment'] and vals = ['mHom', 'ctrl']
+        then df_sub = df.loc[(df.ablationGroup=='mHom') & (df.Treatment=='ctrl')].
+        Then, df_sub is bootstrap so that length is multiplied by mult and this
+        is placed back into the original datframe, which is returned
+    mult: scalar
+        Multiplication factor for bootstrapping, i.e.after ootstrap df_sub
+        will have mult times as many rows as before bootstrapping.
+    Returns
+    -------
+    df_bs: pandas dataframe
+        New longer dataframe including the boostrapped subset
+    """
+    df_now = df.copy()
+    inds=np.arange(df_now.shape[0])
+    for key, val in zip(keys, vals):
+        inds_ = np.where(df_now[key]==val)[0]
+        inds=np.intersect1d(inds, inds_)
+    n = len(inds)*mult
+    d = n-len(inds)
+    inds_bs = np.random.choice(inds, size=d, replace=True)
+    inds_bs = np.r_[inds, inds_bs]
+    df_bs = df.iloc[inds_bs]
+    inds_rest = np.setdiff1d(np.arange(len(df)), inds)
+    df_rest = df.iloc[inds_rest]
+    df_bs = pd.concat((df_rest, df_bs), ignore_index=True)
+    return df_bs
 
 
 def detect_noisy_trials(df, nKer : int = 100,
                         var : str = 'swimVel',
-                        convolve : bool = True) -> 'dataframe':
+                        convolve : bool = True):
     """Use a Gaussian Mixture Model to identify noisy points in trials
     and eliminate noisy trials from the dataframe
     Parameters
@@ -211,6 +299,90 @@ def detect_noisy_trials(df, nKer : int = 100,
     kwargs = {f'noisyTrlInds_{var}' : noisyTrlInds}
     df = df.assign(**kwargs)
     return df
+
+def expand_on_trls(df_fish, trlLen=750):
+    """
+    Takes dataframe whose each row contains a single fish data
+    and expands into a larger dataframe wherein each row contains
+    single trial data
+    Parameters
+    ----------
+    df_fish: pandas dataframe, (nFish, nVariables)
+    trlLen: int
+        Number of samples in a single trial
+    Returns
+    -------
+    df_trl: pandas dataframe, (nTrlsInTotal, nVariables)
+        Expanded dataframe
+    """
+    df_trl = []
+    for fi in np.unique(df_fish.FishIdx):
+        df_now = df_fish.loc[df_fish.FishIdx==fi]
+        ta_ = np.array(df_now.iloc[0].tailAngles)
+        nTrls = ta_.shape[1]//trlLen
+        ta_trl = np.hsplit(ta_, nTrls)
+        dic = dict(trlIdx = np.arange(nTrls), FishIdx=[fi]*nTrls, tailAngles=ta_trl)
+        df_trl.append(pd.DataFrame(dic))
+    df_trl = pd.concat(df_trl, ignore_index=True)
+    df_trl = df_trl.assign(trlIdx_glob=np.arange(df_trl.shape[0]))
+    foo = df_fish.drop(columns=['tailAngles', 'tailAngles_tot'])
+    return pd.merge(foo, df_trl, on='FishIdx')
+
+
+def expand_on_bends(df_trl, Fs=500, tPre_ms=100, bendThr=10, minLat_ms=5,
+                    maxGap_ms=100):
+    """Takes dataframe where each row contains single trial information and
+    expands such that each row contains single bend information
+    Parameters
+    ----------
+    df_trl: pandas dataframe, (nTrlsInTotal, nVariables)
+    Fs: int
+        Sampling frequency when collecting data(images)
+    nPre_ms: scalar
+
+    """
+    import apCode.SignalProcessingTools as spt
+    minPkDist = int((10e-3)*Fs)
+    nPre = tPre_ms*1e-3*Fs
+    minLat = minLat_ms*1e-3*Fs
+    maxGap = maxGap_ms*1e-3*Fs
+    df_bend=[]
+    for iTrl in np.unique(df_trl.trlIdx_glob):
+        df_now = df_trl.loc[df_trl.trlIdx_glob==iTrl]
+        y = df_now.iloc[0]['tailAngles'][-1]
+        y = spt.chebFilt(y, 1/Fs, (5, 60), btype='bandpass')
+        pks = spt.findPeaks(y, thr=bendThr, thrType='rel', pol=0,
+                            minPkDist=minPkDist)[0]
+        if len(pks)>3:
+            dpks = np.diff(pks)
+            tooSoon = np.where(pks<(nPre+minLat))[0]
+            tooSparse = np.where(dpks>maxGap)[0]+1
+            inds_del = np.union1d(tooSoon, tooSparse)
+            pks = np.delete(pks, inds_del, axis=0)
+        if len(pks)>3:
+            nBends = len(pks)
+            bendIdx = np.arange(nBends)
+            bendSampleIdxInTrl=pks
+            bendAmp = y[pks]
+            bendAmp_abs = np.abs(bendAmp)
+            bendAmp_rel = np.insert(np.abs(np.diff(bendAmp)), 0,
+                                    np.abs(bendAmp[0]))
+            bendInt_ms = np.gradient(pks)*(1/Fs)*1000
+            onset_ms = (pks[0]-nPre+1)*(1/Fs)*1000
+        else:
+            nBends=0
+            bendIdx, bendAmp, bendAmp_abs, bendAmp_rel, bendInt_ms =\
+                [np.nan for _ in range(5)]
+            bendsampleIdxInTrl, onset_ms = [np.nan for _ in range(2)]
+        dic = dict(trlIdx_glob=iTrl, nBends=nBends, bendIdx=bendIdx,
+                   bendSampleIdxInTrl=bendSampleIdxInTrl, bendAmp=bendAmp,
+                   bendAmp_abs=bendAmp_abs, bendAmp_rel=bendAmp_rel,
+                   bendInt_ms=bendInt_ms, onset_ms=onset_ms)
+        df_now = pd.DataFrame(dic)
+        df_bend.append(df_now)
+    df_bend = pd.concat(df_bend, ignore_index=True)
+    return pd.merge(df_trl, df_bend, on='trlIdx_glob')
+
 
 
 def get_img_props(paths_to_imgs, diam=50, plotBool: bool = False,
@@ -292,3 +464,25 @@ def remove_suffix_from_paths(paths, suffix='proc'):
         else:
             paths_new = paths
     return np.array(paths_new)
+
+def shuffle_trls(df_trl, grpNames):
+    """
+    Shuffle trials for given group names
+    Parameters
+    ----------
+    df_trl: pandas dataframe, (nTrlsInTotal, nVariables)
+        Dataframe where each row corresponds to a single trial
+    grpNames: list of strings
+        Names of ablation groups whose trials are to be shuffled
+    """
+    df_grp = df_trl[df_trl.AblationGroup.isin(grpNames)]
+    df_notGrp = df_trl[df_trl.AblationGroup.isin(grpNames)==False]
+    inds = np.arange(df_grp.shape[0])
+    ta_ = np.array(df_grp.tailAngles)
+    np.random.shuffle(inds)
+    ta_shuf = ta_[inds]
+    df_grp = df_grp.assign(tailAngles=ta_shuf)
+    df_shuf = pd.concat((df_notGrp, df_grp))
+    return df_shuf
+
+

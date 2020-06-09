@@ -697,7 +697,8 @@ class GMM(_GMM):
         comp = responsibilities*pdf
         return comp
 
-    def information_versus_nComponents(self, X, comps=5):
+    @staticmethod
+    def information_versus_nComponents(X, comps=5, verbose=False):
         """
         Given a dataset returns the AIC and BIC for upto specified number of
         components of the Gaussian Mixture Model(GMM) from sklearn.mixture
@@ -719,7 +720,6 @@ class GMM(_GMM):
         import numpy as np
 
         def getMetrics(X, model):
-            print(f'X.shape = {X.shape}, nComps = {model.n_components}')
             # model = GMM(n_components = n_components).fit(X)
             model = model.fit(X)
             return (model.aic(X), model.bic(X))
@@ -727,8 +727,9 @@ class GMM(_GMM):
             comps = np.arange(comps)+1
         metrics = []
         for iComp, comp in enumerate(comps):
-            print(f'{iComp}/{len(comps)}; comp = {comp}')
-            model = self
+            if verbose:
+                print(f'{iComp}/{len(comps)}; comp = {comp}')
+            model = GMM(n_components=comp)
             model.n_components = comp
             foo = dask.delayed(getMetrics)(X, model)
             metrics.append(foo)

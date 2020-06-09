@@ -2,7 +2,7 @@
 """
 Created on Tue Oct  9 15:36:14 2018
 
-@author: pujalaa
+@author: pujalaa (avinashpujala@gmail.com)
 """
 
 import numpy as np
@@ -10,14 +10,115 @@ import dask
 import os
 import sys
 import h5py
-sys.path.append(r'v:/code/python/code')
+import re
+import glob
+
+sys.path.append(r'\\dm11\koyamalab\code\python\code')
 import apCode.volTools as volt  # noqa: E402
 from apCode import util  # noqa: E402
 import apCode.FileTools as ft  # noqa: E402
 import apCode.SignalProcessingTools as spt  # noqa: E402
+from apCode import hdf  #noqa: E402
 
 
-def cleanTailAngles(ta, svd=None, nComps: int = 3, nWaves=5, dt=1/1000,
+def ca_tifs_to_hdf(fishDir, hFilePath=None, grpName='ca_all',
+                   regex='\d{3}_[h/t]', q_min=10, verbose=True):
+    """
+    Given the directory to data from a single fish, reads all the tif images in
+    a subdirectory 'fishir/d{3}_[h/t]/ca/' and writes them to an already existing
+    hdf file in the path or, if absent, a newly created and timestamped one.
+    The paths to the tif files can be found in hdfFile['filePaths_ca'], whereas the
+    images and all other relevant info can be found in hdfFile['/ca/']
+    Parameters
+    ----------
+    fishDir: str
+        Root directory containing all the image subdirectories
+    hFilePath: str or None
+        Full path to an existing file or if None, then the program automatically
+        looks for an HDF file in the path, and if absent, creates one with
+        the name procData_{timestamp}.h5
+    grpName: str
+        The name of the grop in the HDF file under which to store all the relevant
+        inforation.
+     q_min: scalar or None
+        If scalar, then percentile value to use to compute offset in each
+        image and subtract. If None, skips this step.
+    verbose: bool
+        Verbosity when appending datasets to HDF file
+    Returns
+    -------
+    hFilePath: str
+        Path the to HDF file where the images and related info was stored
+    """
+    perc = lambda x, axis: np.percentile(x, q_min, axis=axis)
+    compute_off = lambda slc: np.apply_over_axes(perc, slc, [-2, -1])
+    def remove_off(slc):
+        """
+        slc: (nTimePts, *imgDims)
+        """
+        off = compute_off(slc)
+        slc = slc-off
+        slc = slc[None, ...]
+        return slc
+
+    imgDirs = glob.glob(os.path.join(fishDir, '*/ca/'), recursive=True)
+    if len(imgDirs)==0:
+        print('No Ca image subdirectories found, check path')
+        return None
+    else:
+        print(f'{len(imgDirs)} Ca subdirectories found')
+    if hFilePath is None:
+        hFilePath = glob.glob(os.path.join(fishDir, 'procData*.h5'))[-1]
+        if len(hFilePath)==0:
+            hFilePath = os.path.join(fishDir,
+                                     f'procData_{util.timestamp()}.h5')
+    imgs_full = []
+    for iSession, imgDir in enumerate(imgDirs):
+        print(f'Session # {iSession}, {imgDir}')
+        imgs_ca, tifInfo = volt.dask_array_from_scanimage_tifs(imgDir)
+        imgs_full.append(imgs_ca[:, 1:, ...]) # Get rid of useless top slice
+        print('Baseline adjusting imgs_ca')
+        nImgs = len(imgs_ca)
+        filePaths = util.to_ascii(tifInfo['filePaths'])
+        print(f'{len(filePaths)} tif files in directory')
+        sessionNum = np.array([iSession]*nImgs)
+        stimLoc = np.array(re.findall(regex, imgDir)*nImgs)
+        stimLoc = util.to_ascii(stimLoc)
+        keys = [f'filePaths_{grpName}', f'{grpName}/sessionNum',
+                f'{grpName}/stimLoc']
+        vals = [filePaths, sessionNum, stimLoc]
+        with h5py.File(hFilePath, mode='a') as hFile:
+            if iSession==0:
+                if grpName in hFile:
+                    del hFile[grpName]
+                if f'filePaths_{grpName}' in hFile:
+                    del hFile[f'filePaths_{grpName}']
+            for key, val in zip(keys, vals):
+                hFile = hdf.createOrAppendToHdf(hFile, key, val,
+                                                verbose=verbose)
+
+    imgs_full = dask.array.concatenate(imgs_full)
+    imgs_full = imgs_full.swapaxes(0, 1) # Put z dim before time
+    stackDims = imgs_full.shape
+    dtype = imgs_full.dtype
+    if q_min is not None:
+        print('Correcting offset...')
+        imgs = []
+        for iSlc, slc in enumerate(imgs_full):
+            slc_del = dask.delayed(remove_off)(slc)
+            slc_arr = dask.array.from_delayed(slc_del,
+                                              (1, *stackDims[1:]),
+                                              dtype=dtype)
+            imgs.append(slc_arr)
+        imgs = dask.array.concatenate(imgs)
+    else:
+        imgs = imgs_full
+    print(f'Writing dask array to hdf file at\n{hFilePath}')
+    imgs.to_hdf5(hFilePath, f'/{grpName}/imgs_raw')
+    return hFilePath
+
+
+def cleanTailAngles(ta, svd=None, nComps: int = 3, nWaves=8, dt=1/500,
                     lpf=60):
     """
     Given the array of tail angles along the fish across time, and optionally,
@@ -102,13 +203,54 @@ def comBoot(h_trl, t_trl, target=25):
     return h_trl, t_trl
 
 
+def consolidate_rois(rois, volDims):
+    """Given a set of ImageJ rois (an ordered dictionary)
+    that are draw across multiple slices of an image volume,
+    returns masks created from consolidation of identically-named
+    ROIs.
+    Parameters
+    ----------
+    rois: ordered dict
+        ImageJ created ROI read andreturned as an ordered dictionary
+        by mlearn.readimageJRois
+    volDims: tuple-like, (3, ) = (nSlices, imgHeight, imgWidth)
+        Dimensions of the volume in which the ROIs were drawn. Used
+        to create masks
+    Returns
+    -------
+    masks: array, (nRois, nSlices, *imgDims)
+    roiNames: list of strings
+        Unique names of ROIs
+    """
+    def strip_roi_suffices(strList):
+        strList_new = []
+        for _ in strList:
+            a, b, c = _.split('.')
+            strList_new.append(a + '.' + b)
+        return np.array(strList_new)
+    roiNames_orig = list(rois.keys())
+    roiNames = strip_roi_suffices(roiNames_orig)
+    roiNames_unique = np.unique(roiNames)
+    masks = []
+    for rn in roiNames_unique:
+        inds = util.findStrInList(rn, roiNames)
+        mask = np.zeros(volDims)
+        for ind in inds:
+            roi_ = rois[roiNames_orig[ind]]
+            z = roi_['position']
+            mask[z-1] = roi_['mask']
+        masks.append(mask)
+    return np.array(masks), roiNames_unique
+
+
+
 def copyFishImgsForNNTraining(exptDir, prefFrameRangeInTrl=(115, 160),
                               nImgsForTraining: int = 50,
                               overWrite: bool = False):
-    """ A convenient function for randomly selecting fish images from within a
-    range of frames (typically, peri-stimulus to maximize postural diversity)
-    in each trial directory of images, and then writing those images in a
-    directory labeled "imgs_train"
+    """ A convenient function for randomly selecting fish images from within
+    a range of frames (typically, peri-stimulus to maximize postural
+    diversity) in each trial directory of images, and then writing those
+    images in a directory labeled "imgs_train"
     Parameters
     ----------
     exptDir: string
@@ -276,7 +418,7 @@ def estimateHeadSideInFixed(img):
 
 def extractAndStoreBehaviorData_singleFish(fishPath, uNet=None, hFilePath=None,
                                            regex=r'\d{1,5}_[ht]',
-                                           imgExt='bmp'):
+                                           imgExt='bmp', **unet_kwargs):
     """
     Parameters
     ----------
@@ -294,6 +436,7 @@ def extractAndStoreBehaviorData_singleFish(fishPath, uNet=None, hFilePath=None,
         For e.g., "001_h", "002_t", etc.
     imgExt: str
         Extension of the behavior image files.
+    **unet_kwargs: e.g. batch_size; see unet.predict
     Returns
     -------
     hFilePath: Full path to the HDF file object where behavior data is stored
@@ -336,23 +479,20 @@ def extractAndStoreBehaviorData_singleFish(fishPath, uNet=None, hFilePath=None,
             behavDirs = np.array(roots)[inds]
             nTrls = len(inds)
             print(f'{nTrls} behavior directories found in {sd}')
-#            stimLoc.extend([hort]*nTrls)
-            stimLoc.extend([sd_now]*nTrls)
+            stimLoc.extend(np.repeat(sd_now, nTrls))
+            # stimLoc.extend([sd_now]*nTrls)
+            keys = ['images_fish', 'midlines', 'inds_kept_midlines',
+                    'tailAngles']
             for iTrl, bd in enumerate(behavDirs):
                 print(f'Trl # {iTrl+1}/{nTrls}')
                 out = hf.tailAnglesFromRawImagesUsingUnet(behavDirs[iTrl],
-                                                          uNet)
+                                                          uNet, **unet_kwargs)
                 if (iSub == 0) & (iTrl == 0) & ('behav' in hFile):
                     del hFile['behav']
-                keyName = 'behav/images_prob'
-                hFile = hdf.createOrAppendToHdf(hFile, keyName,
-                                                out['I_prob'])
-                keyName = 'behav/tailAngles'
-                hFile = hdf.createOrAppendToHdf(hFile, keyName,
-                                                out['tailAngles'])
-                keyName = 'behav/midlines_interp'
-                hFile = hdf.createOrAppendToHdf(hFile, keyName,
-                                                out['midlines']['interp'])
+                for key in keys:
+                    keyName = f'behav/{key}'
+                    val = out[key]
+                    hFile = hdf.createOrAppendToHdf(hFile, keyName, val)
         hFile.create_dataset('behav/stimLoc', data=util.to_ascii(stimLoc))
     return hFilePath
 
@@ -1237,7 +1377,7 @@ def impulse_trains_from_labels(labels, ta, labels_sel=None,
     return np.array(irTrain), np.array(names)
 
 
-def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
+def midlinesFromImages(images, n_jobs=32, orientMidlines=True, verbose=False):
     """
     Returns midlines from fish images generated by fishImgsForMidline
     Parameters
@@ -1252,12 +1392,12 @@ def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
     Returns
     -------
     midlines: array, ([T], n, 2)
-        Array of midlines with the same number of points in each midline because
-        of smoothing and interpolation
+        Array of midlines with the same number of points in each midline
+        because of smoothing and interpolation
     ml_dist: tuple, (2,)
         First element is raw, pruned, and sorted midlines
-        Second element is cumulative sum of distances (in pixel lengths) between
-        successive midline points
+        Second element is cumulative sum of distances (in pixel lengths)
+        between successive midline points
     """
     from skimage.morphology import thin
     import apCode.geom as geom
@@ -1265,11 +1405,13 @@ def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
     from dask import delayed, compute
     # import os
 
-    def getDists(point, points): return np.sum((point.reshape(1, -1)-points)**2, axis=1)**0.5
+    def getDists(point, points):
+        return np.sum((point.reshape(1, -1)-points)**2, axis=1)**0.5
 
     def identifyPointTypesOnMidline(ml):
         dist_adj = np.sqrt(2)+0.01
-        L = np.array([len(np.where(getDists(ml_, ml) < dist_adj)[0]) for ml_ in ml])
+        L = np.array([len(np.where(getDists(ml_, ml) < dist_adj)[0])
+                      for ml_ in ml])
         endInds = np.where(L == 2)[0].astype(int)
         branchInds = np.where(L == 4)[0].astype(int)
         middleInds = np.where(L == 3)[0].astype(int)
@@ -1287,7 +1429,8 @@ def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
         if len(inds_end) == 0:
             ind_start = ind_brightest
         else:
-            ind_start = inds_end[np.argmin(getDists(ml[ind_brightest, :], ml[inds_end, :]))]
+            ind_start = inds_end[np.argmin(getDists(ml[ind_brightest, :],
+                                                    ml[inds_end, :]))]
         ord_sort = geom.sortPointsByWalking(ml, ref=ml[ind_start, :])
         ml_sort = ml[ord_sort, :]
         d = np.sum(np.diff(ml_sort, axis=0)**2, axis=1)**0.5
@@ -1332,7 +1475,8 @@ def midlinesFromImages(images, n_jobs=32, orientMidlines=True):
                                        for img in images]))
     midlines = np.array(midlines)
     if orientMidlines:
-        print('Orienting midlines')
+        if verbose:
+            print('Orienting midlines')
         midlines = orientMidlines_(midlines)
     return midlines, ml_dist
 
@@ -1689,21 +1833,27 @@ def rawImagesToEyeInfo(images, unet, baryCenter, filtSigma=None, otsuMult=1):
     return out
 
 
-def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', ch_stim='patch3',
-                              tifNameStr='', time_preStim=1, time_postStim=10, thr_stim=0.5,
-                              thr_camTrig=3, maxAllowedTimeBetweenStimAndCamTrig=0.5, n_jobs=2):
+def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16,
+                              ch_camTrig='patch1', ch_stim='patch3',
+                              tifNameStr='', time_preStim=1,
+                              time_postStim=10, thr_stim=0.5,
+                              thr_camTrig=3,
+                              maxAllowedTimeBetweenStimAndCamTrig=0.5,
+                              n_jobs=2):
     """
-    Given the directory to .tif files stored by ScanImage (Bessel beam image settings) and the full
-    path to the accompanying bas files returns a dictionary with values holding peri-stimulus
-    image data (Ca activity) in trialized format along with some other pertinent info.
-
+    Given the directory to .tif files stored by ScanImage (Bessel beam image
+    settings) and the full path to the accompanying bas files returns a
+    dictionary with values holding peri-stimulus image data (Ca activity) in
+    trialized format along with some other pertinent info.
     Parameters
     ----------
     tifDir: string
-        Path to directory holding .tif files written by ScanImage. In the current setting, each .tif
-        file holds nCh*3000 images, where nCh = number of channels.
+        Path to directory holding .tif files written by ScanImage. In the
+        current setting, each .tif file holds nCh*3000 images, where
+        nCh = number of channels.
     basPath: string
-        Full path to the bas (BehavAndScan) file accompanying the imaging session.
+        Full path to the bas (BehavAndScan) file accompanying the imaging
+        session.
     nBasCh: scalar
         Number of signal channels in the bas file.
     ch_camTrig: string
@@ -1717,25 +1867,28 @@ def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', c
     time_postStim: scalar
         The length of the post-stimulus time.
     thr_stim: scalar
-        Threshold to use for detection of stimuli in the stimulus channel of bas.
+        Threshold to use for detection of stimuli in the stimulus channel of
+        bas.
     thr_camTrig: scalar
-        Threshold to use for detection of camera trigger onsets in the camera trigger channel of bas.
+        Threshold to use for detection of camera trigger onsets in the camera
+        trigger channel of bas.
     maxAllowedTimeBetweenStimAndCamTrig: scalar
-        If a camera trigger is separated in time by the nearest stimulus by longer than this time
-        interval, then ignore this stimulus trial.
+        If a camera trigger is separated in time by the nearest stimulus by
+        longer than this time interval, then ignore this stimulus trial.
     Returns
     -------
     D: dict
         Dictionary contaning the following keys:
         'I': array, (nTrials, nTime, nImageChannels, imageWidth, imageHeight)
-            Image hyperstack arranged in conveniently-accessible trialized format.
+            Image hyperstack arranged in conveniently-accessible trialized
+            format.
         'tifInfo': dict
             Dictionary holding useful image metadata. Has following keys:
             'filePaths': list of strings
                 Paths to .tif files
             'nImagesInfile': scalar int
-                Number of images in each .tif file after accounting of number of
-                image channels
+                Number of images in each .tif file after accounting of number
+                of image channels
             'nChannelsInFile': scalar int
                 Number of image channels
         'inds_stim': array of integers, (nStim,)
@@ -1743,7 +1896,8 @@ def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', c
         'inds_stim_img': array of integers, (nStim,)
             Indices in image coordinates where stimuli occurred
         'inds_camTrig': array of integers, (nCameraTriggers,)
-            Indices in bas coordinates corresponding to the onsets of camera triggers.
+            Indices in bas coordinates corresponding to the onsets of camera
+            triggers.
         'bas': dict
             BehavAndScan data
 
@@ -1755,7 +1909,8 @@ def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', c
     import apCode.util as util
 
     def getImgIndsInTifs(tifInfo):
-        nImgsInFile_cum = np.cumsum(tifInfo['nImagesInFile']*tifInfo['nChannelsInFile'])
+        nImgsInFile_cum =\
+            np.cumsum(tifInfo['nImagesInFile']*tifInfo['nChannelsInFile'])
         imgIndsInTifs = []
         for i in range(len(nImgsInFile_cum)):
             if i == 0:
@@ -1780,7 +1935,8 @@ def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', c
     # Get a list of indices corresponding to images in each of the tif files
     inds_imgsInTifs = getImgIndsInTifs(tifInfo)
 
-    # Read bas file to get stimulus and camera trigger indices required to align images and behavior
+    # Read bas file to get stimulus and camera trigger indices required to
+    # align images and behavior
     print('Reading bas file, detecting stimuli and camera triggers...')
     bas = ephys.importCh(basPath, nCh=nBasCh)
     inds_stim = spt.levelCrossings(bas[ch_stim], thr=thr_stim)[0]
@@ -1791,7 +1947,8 @@ def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', c
     inds_del = np.where(dt_vec <= (0.5*dt_ca))[0]+1
     inds_camTrig = np.delete(inds_camTrig, inds_del)
 
-    # Deal with possible mismatch in number of camera trigger indices and number of images in tif files
+    # Deal with possible mismatch in number of camera trigger indices and
+    # number of images in tif files
     if nCaImgs < len(inds_camTrig):
         inds_camTrig = inds_camTrig[:nCaImgs]
         nCaImgs_extra = 0
@@ -1800,11 +1957,14 @@ def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', c
     else:
         nCaImgs_extra = 0
         print('{} extra Ca2+ images'.format(nCaImgs_extra))
-    print('{} stimuli and {} camera triggers'.format(len(inds_stim), len(inds_camTrig)))
+    print('{} stimuli and {} camera triggers'.format(len(inds_stim),
+                                                     len(inds_camTrig)))
 
     # Indices of ca images closest to stimulus
     inds_stim_img = spt.nearestMatchingInds(inds_stim, inds_camTrig)
-    # Find trials where the nearest cam trigger is farther than the stimulus by a certain amount
+
+    # Find trials where the nearest cam trigger is farther than the stimulus
+    # by a certain amount
     inds_camTrigNearStim = inds_camTrig[inds_stim_img]
     t_stim = bas['t'][inds_stim]
     t_camTrigNearStim = bas['t'][inds_camTrigNearStim]
@@ -1813,10 +1973,13 @@ def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', c
     inds_ca_all = np.arange(nCaImgs)
     nPreStim = int(np.round(time_preStim/dt_ca))
     nPostStim = int(np.round(time_postStim/dt_ca))
-    print("{} pre-stim points, and {} post-stim points".format(nPreStim, nPostStim))
+    print("{} pre-stim points, and {} post-stim points".format(nPreStim,
+                                                               nPostStim))
     inds_ca_trl = np.array(spt.segmentByEvents(
         inds_ca_all, inds_stim_img+nCaImgs_extra, nPreStim, nPostStim))
-    # Find trials that are too short to include the pre- or post-stimulus period
+
+    # Find trials that are too short to include the pre- or post-stimulus
+    # period
     trlLens = np.array([len(trl_) for trl_ in inds_ca_trl])
     inds_tooShort = np.where(trlLens < np.max(trlLens))[0]
     inds_trl_del = np.union1d(inds_tooFar, inds_tooShort)
@@ -1854,7 +2017,8 @@ def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', c
         import dask
         from dask.diagnostics import ProgressBar
         for trl in inds_ca_trl:
-            I_ = dask.delayed(trlImages)(inds_ca_trl, inds_imgsInTifs, nImgCh, tifInfo, trl)
+            I_ = dask.delayed(trlImages)(inds_ca_trl, inds_imgsInTifs, nImgCh,
+                                         tifInfo, trl)
             I.append(I_)
         with ProgressBar():
             I = dask.compute(*I)
@@ -1865,20 +2029,26 @@ def readPeriStimulusTifImages(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', c
     return D
 
 
-def readPeriStimulusTifImages_volumetric(tifDir, basPath, nBasCh=16, ch_camTrig='patch1', ch_stim='patch3',
-                                         tifNameStr='', time_preStim=2, time_postStim=10, thr_stim=0.5,
+def readPeriStimulusTifImages_volumetric(tifDir, basPath, nBasCh=16,
+                                         ch_camTrig='patch1', ch_stim='patch3',
+                                         tifNameStr='', time_preStim=2,
+                                         time_postStim=10, thr_stim=0.5,
                                          thr_camTrig=3, maxAllowedTimeBetweenStimAndCamTrig=0.5, n_jobs=2):
     """
-    Given the directory to .tif files stored by ScanImage (Bessel beam image settings) and the full
-    path to the accompanying bas files returns a dictionary with values holding peri-stimulus
-    image data (Ca activity) in trialized format along with some other pertinent info.
+    Given the directory to .tif files stored by ScanImage (Bessel beam image
+    settings) and the full
+    path to the accompanying bas files returns a dictionary with values
+    holding peri-stimulus image data (Ca activity) in trialized format along
+    with some other pertinent info.
     Parameters
     ----------
     tifDir: string
-        Path to directory holding .tif files written by ScanImage. In the current setting, each .tif
+        Path to directory holding .tif files written by ScanImage. In the
+        current setting, each .tif
         file holds nCh*3000 images, where nCh = number of channels.
     basPath: string
-        Full path to the bas (BehavAndScan) file accompanying the imaging session.
+        Full path to the bas (BehavAndScan) file accompanying the imaging
+        session.
     nBasCh: scalar
         Number of signal channels in the bas file.
     ch_camTrig: string
@@ -1892,11 +2062,14 @@ def readPeriStimulusTifImages_volumetric(tifDir, basPath, nBasCh=16, ch_camTrig=
     time_postStim: scalar
         The length of the post-stimulus time.
     thr_stim: scalar
-        Threshold to use for detection of stimuli in the stimulus channel of bas.
+        Threshold to use for detection of stimuli in the stimulus channel of
+        bas.
     thr_camTrig: scalar
-        Threshold to use for detection of camera trigger onsets in the camera trigger channel of bas.
+        Threshold to use for detection of camera trigger onsets in the camera
+        trigger channel of bas.
     maxAllowedTimeBetweenStimAndCamTrig: scalar
-        If a camera trigger is separated in time by the nearest stimulus by longer than this time
+        If a camera trigger is separated in time by the nearest stimulus by
+        longer than this time
         interval, then ignore this stimulus trial.
     Returns
     -------
@@ -1923,15 +2096,14 @@ def readPeriStimulusTifImages_volumetric(tifDir, basPath, nBasCh=16, ch_camTrig=
             BehavAndScan data
 
     """
-#    import tifffile as tff
-#    import apCode.FileTools as ft
     import apCode.ephys as ephys
     from dask import compute
     from dask.diagnostics import ProgressBar
-    from scipy.stats import mode
+    # from scipy.stats import mode
 
     def getImgIndsInTifs(tifInfo):
-        nImgsInFile_cum = np.cumsum(tifInfo['nImagesInFile']*tifInfo['nChannelsInFile'])
+        nImgsInFile_cum = np.cumsum(tifInfo['nImagesInFile'] *
+                                    tifInfo['nChannelsInFile'])
         imgIndsInTifs = []
         for i in range(len(nImgsInFile_cum)):
             if i == 0:
@@ -1945,8 +2117,8 @@ def readPeriStimulusTifImages_volumetric(tifDir, basPath, nBasCh=16, ch_camTrig=
     print('Reading ScanImage tif files as dask array...')
     images, tifInfo = volt.dask_array_from_scanimage_tifs(tifDir)
 
-    # Read bas file to get stimulus and camera trigger indices required to align images and behavior
-#    print('Reading bas file, detecting stimuli and camera triggers...')
+    # Read bas file to get stimulus and camera trigger indices required to
+    # align images and behavior
     bas = ephys.importCh(basPath, nCh=nBasCh)
     inds_stim = spt.levelCrossings(bas[ch_stim], thr=thr_stim)[0]
     inds_camTrig = spt.levelCrossings(bas[ch_camTrig], thr=thr_camTrig)[0]
@@ -1960,7 +2132,6 @@ def readPeriStimulusTifImages_volumetric(tifDir, basPath, nBasCh=16, ch_camTrig=
         print(f'{nFrames_total -len(inds_camTrig)} fewer camera triggers than images, check threshold!')
 
     nFramesPerVol = tifInfo['nFramesPerVolume'][0]
-#    print(f'{nFramesPerVol} frames per volume')
     inds_stackInit = inds_camTrig[::nFramesPerVol]
     dt_vec = np.diff(bas['t'][inds_stackInit])
     dt_ca = np.round(np.mean(dt_vec)*100)/100
@@ -1970,23 +2141,252 @@ def readPeriStimulusTifImages_volumetric(tifDir, basPath, nBasCh=16, ch_camTrig=
     inds_stim_ca = spt.nearestMatchingInds(inds_stim, inds_stackInit)
     n_pre = int(np.round(time_preStim/dt_ca))
     n_post = int(np.round(time_postStim/dt_ca))
-    print(f'{n_pre} pre stim images, {n_post} post-stim images')
+    print(f'{n_pre} pre-stim images, {n_post} post-stim images')
     with ProgressBar():
         images_trl = compute(*spt.segmentByEvents(images, inds_stim_ca, n_pre,
                                                   n_post))
     nImgs = np.array([img.shape[0] for img in images_trl])
-    inds_del = np.where(nImgs < mode(nImgs)[0])
+    trlLen = n_post + n_pre
+    trlIdx = np.arange(len(nImgs))
+    inds_del = np.where(nImgs < trlLen)[0]
     images_trl = np.delete(images_trl, inds_del, axis=0)
-    try:
-        #        images_trl = np.squeeze(np.array(images_trl))
-        images_trl = np.array([np.array(img) for img in images_trl])
-        images_trl = np.squeeze(images_trl)
-    except:
-        pass
+    trlIdx = np.delete(trlIdx, inds_del, axis=0)
+    # try:
+    #     #        images_trl = np.squeeze(np.array(images_trl))
+    #     images_trl = np.array([np.array(img) for img in images_trl])
+    #     images_trl = np.squeeze(images_trl)
+    # except:
+    #     pass
 
-    out = dict(stimInds=inds_stim, camTrigInds=inds_camTrig, stimInds_ca=inds_stim_ca,
-               tifInfo=tifInfo, images_trl=images_trl, inds_excluded=inds_del)
+    out = dict(stimInds=inds_stim, camTrigInds=inds_camTrig,
+               stimInds_ca=inds_stim_ca, tifInfo=tifInfo,
+               images_trl=images_trl, inds_excluded=inds_del,
+               trlIdx=trlIdx)
     return out
+
+
+def readPeriStimTifImgs_vol(tifDir, basPath, nBasCh=16,
+                            ch_camTrig='patch1', ch_stim='patch3',
+                            tifNameStr='', time_preStim=2,
+                            time_postStim=10, thr_stim=0.5,
+                            thr_camTrig=3,
+                            maxAllowedTimeBetweenStimAndCamTrig=0.5,
+                            n_jobs=2):
+    """
+    Given the directory to .tif files stored by ScanImage (Bessel beam image
+    settings) and the full
+    path to the accompanying bas files returns a dictionary with values
+    holding peri-stimulus image data (Ca activity) in trialized format along
+    with some other pertinent info.
+    Parameters
+    ----------
+    tifDir: string
+        Path to directory holding .tif files written by ScanImage. In the
+        current setting, each .tif
+        file holds nCh*3000 images, where nCh = number of channels.
+    basPath: string
+        Full path to the bas (BehavAndScan) file accompanying the imaging
+        session.
+    nBasCh: scalar
+        Number of signal channels in the bas file.
+    ch_camTrig: string
+        Name of the channel in bas corresponding to the camera trigger signal
+    ch_stim: string
+        Name of the stimulus signal channel in bas.
+    tifNameStr: string
+        Only .tif files containing this will be read.
+    time_preStim: scalar
+        The length of the pre-stimulus time to include when reading images
+    time_postStim: scalar
+        The length of the post-stimulus time.
+    thr_stim: scalar
+        Threshold to use for detection of stimuli in the stimulus channel of
+        bas.
+    thr_camTrig: scalar
+        Threshold to use for detection of camera trigger onsets in the camera
+        trigger channel of bas.
+    maxAllowedTimeBetweenStimAndCamTrig: scalar
+        If a camera trigger is separated in time by the nearest stimulus by
+        longer than this time
+        interval, then ignore this stimulus trial.
+    Returns
+    -------
+    D: dict
+        Dictionary contaning the following keys:
+        'I': array, (nTrials, nTime, nImageChannels, imageWidth, imageHeight)
+            Image hyperstack arranged in conveniently-accessible trialized format.
+        'tifInfo': dict
+            Dictionary holding useful image metadata. Has following keys:
+            'filePaths': list of strings
+                Paths to .tif files
+            'nImagesInfile': scalar int
+                Number of images in each .tif file after accounting of number of
+                image channels
+            'nChannelsInFile': scalar int
+                Number of image channels
+        'inds_stim': array of integers, (nStim,)
+            Indices in bas coordinates where stimuli occurred.
+        'inds_stim_img': array of integers, (nStim,)
+            Indices in image coordinates where stimuli occurred
+        'inds_camTrig': array of integers, (nCameraTriggers,)
+            Indices in bas coordinates corresponding to the onsets of camera triggers.
+        'bas': dict
+            BehavAndScan data
+
+    """
+    import apCode.ephys as ephys
+    # from dask import compute
+    # from dask.diagnostics import ProgressBar
+    # from scipy.stats import mode
+
+    def getImgIndsInTifs(tifInfo):
+        nImgsInFile_cum = np.cumsum(tifInfo['nImagesInFile'] *
+                                    tifInfo['nChannelsInFile'])
+        imgIndsInTifs = []
+        for i in range(len(nImgsInFile_cum)):
+            if i == 0:
+                inds_ = np.arange(0, nImgsInFile_cum[i])
+            else:
+                inds_ = np.arange(nImgsInFile_cum[i-1], nImgsInFile_cum[i])
+            imgIndsInTifs.append(inds_)
+        return imgIndsInTifs
+
+    # Read relevant metadata from tif files in directory
+    print('Reading ScanImage tif files as dask array...')
+    images, tifInfo = volt.dask_array_from_scanimage_tifs(tifDir)
+
+    # Read bas file to get stimulus and camera trigger indices required to
+    # align images and behavior
+    bas = ephys.importCh(basPath, nCh=nBasCh)
+    inds_stim = spt.levelCrossings(bas[ch_stim], thr=thr_stim)[0]
+    inds_camTrig = spt.levelCrossings(bas[ch_camTrig], thr=thr_camTrig)[0]
+    print(f'{len(inds_camTrig)} camera triggers detected!')
+    images_ser = images.reshape(-1, *images.shape[2:])
+    nFrames_total = images_ser.shape[0]
+    print(f'{nFrames_total} total number of frames...')
+    if len(inds_camTrig) > nFrames_total:
+        inds_camTrig = inds_camTrig[:nFrames_total]
+    elif len(inds_camTrig) < nFrames_total:
+        print(f'{nFrames_total -len(inds_camTrig)} fewer camera triggers than images, check threshold!')
+
+    nFramesPerVol = tifInfo['nFramesPerVolume'][0]
+    inds_stackInit = inds_camTrig[::nFramesPerVol]
+    dt_vec = np.diff(bas['t'][inds_stackInit])
+    dt_ca = np.round(np.mean(dt_vec)*100)/100
+    print(f'Ca volume acquisition rate = {np.round((1/dt_ca)*10)/10} Hz')
+
+    # Indices of ca images closest to stimulus
+    inds_stim_ca = spt.nearestMatchingInds(inds_stim, inds_stackInit)
+    n_pre = int(np.round(time_preStim/dt_ca))
+    n_post = int(np.round(time_postStim/dt_ca))
+    print(f'{n_pre} pre-stim images, {n_post} post-stim images')
+    images_trl = spt.segmentByEvents(images, inds_stim_ca, n_pre, n_post)
+    nImgs = np.array([img.shape[0] for img in images_trl])
+    trlLen = n_post + n_pre
+    trlIdx = np.arange(len(nImgs))
+    inds_del = np.where(nImgs < trlLen)[0]
+    inds_keep = np.setdiff1d(trlIdx, inds_del)
+    images_trl = [images_trl[ind] for ind in inds_keep]
+    trlIdx = np.delete(trlIdx, inds_del, axis=0)
+
+    out = dict(stimInds=inds_stim, camTrigInds=inds_camTrig,
+                stimInds_ca=inds_stim_ca, tifInfo=tifInfo,
+                images_trl=images_trl, inds_excluded=inds_del,
+                trlIdx=trlIdx, trlLen=trlLen)
+    return out
+
+def read_and_store_ca_imgs(dir_fish, t_preStim=2, t_postStim=10,
+                           q_min=10, regex=r'\d{1,5}_[ht]'):
+    """
+    Read peri-stimulus Ca2+ images from ScanImage tif files and store to
+    new or existing (if created within in the hour)
+    Parameters
+    ----------
+    dir_fish: str
+        Path to directory containing single fish data
+    t_preStim: scalar
+        Time (seconds) before stimulus to include in each trial
+    t_postStim: scalar
+        Self-explanatory
+    regex: string
+        Regular expression for detecting subfolders with tif files
+    q_min: scalar or None
+        If scalar, then percentile value to use to compute offset in each
+        image and subtract. If None, skips this step.
+    Returns
+    -------
+    hFilePath: str
+        Path to hdf file where data is stored
+    """
+    import apCode.FileTools as ft
+    perc = lambda x, axis: np.percentile(x, q_min, axis=axis)
+    compute_off = lambda slc: np.apply_over_axes(perc, slc, [-2, -1])
+    def remove_off(slc):
+        """
+        slc: (nTimePts, *imgDims)
+        """
+        off = compute_off(slc)
+        slc = slc-off
+        slc = slc[None, ...]
+        return slc
+
+    subDirs = [os.path.join(dir_fish, sd) for sd in ft.subDirsInDir(dir_fish)
+               if re.match(regex, sd)]
+    hFileName = f'procData_{util.timestamp()}.h5'
+    hFilePath = os.path.join(dir_fish, hFileName)
+    with h5py.File(hFilePath, mode='a') as hFile:
+        imgs_full = []
+        for iSub, sd in enumerate(subDirs):
+            hort = os.path.split(sd)[-1]
+            file_bas = ft.findAndSortFilesInDir(sd, ext='16ch')
+            if len(file_bas)>1:
+                print(file_bas)
+                idx = input('Which "bas" file to read? Enter index : ')
+                idx = int(idx)
+                path_bas = os.path.join(sd, file_bas[idx])
+            else:
+                path_bas = os.path.join(sd, file_bas[-1])
+            path_tif = os.path.join(sd, 'ca')
+            out = readPeriStimTifImgs_vol(path_tif, path_bas,
+                                          time_preStim=t_preStim,
+                                          time_postStim=t_postStim)
+            imgs = dask.array.concatenate(out['images_trl'])
+            imgs = imgs[:, 1:, ...] # Get rid of useless top slice
+            imgs_full.append(imgs)
+            trlIdx = np.repeat(out['trlIdx'], out['trlLen'])
+            stimLoc = util.to_ascii(np.repeat(hort[-1], len(trlIdx)))
+            sessionIdx = np.repeat(iSub, len(trlIdx))
+            nImgsInTrl_ca = np.array(out['trlLen']).reshape(1, )
+            keys =  ['nImgsInTrl_ca', 'stimLoc', 'sessionIdx', 'trlIdx_ca']
+            vals = [nImgsInTrl_ca, stimLoc, sessionIdx, trlIdx]
+            for key, val in zip(keys, vals):
+                if iSub == 0:
+                    if key in hFile:
+                        del hFile[key]
+                    if 'ca_raw' in hFile:
+                        del hFile['ca_raw']
+                hdf.createOrAppendToHdf(hFile, key, val, verbose=False)
+        imgs_full = dask.array.concatenate(imgs_full)
+        imgs_full = imgs_full.transpose(1, 0, 2, 3)
+        stackDims = imgs_full.shape
+        dtype = imgs_full.dtype
+        if q_min is not None:
+            print('Correcting offset...')
+            imgs = []
+            nSlices = imgs_full.shape[0]
+            for iSlc, slc in enumerate(imgs_full):
+                slc_del = dask.delayed(remove_off)(slc)
+                slc_arr = dask.array.from_delayed(slc_del,
+                                                  (1, *stackDims[1:]),
+                                                  dtype=dtype)
+                imgs.append(slc_arr)
+            imgs = dask.array.concatenate(imgs)
+        else:
+            imgs = imgs_full
+    print(f'Writing dask array to hdf file at\n{hFilePath}')
+    imgs.to_hdf5(hFilePath, '/ca_raw')
+    return hFilePath
+
 
 
 def readScanImageTif(tifPath):
@@ -2017,91 +2417,33 @@ def readScanImageTif(tifPath):
     return images
 
 
-def registerTrializedImgStack_old(I, iCh_ref=0, nImgs_ref=40, filtSigma=3, filtMode='wrap',
-                                  denoise: bool = False, regMethod='st'):
+def register_piecewise_from_hdf(hFilePath, key_in='ca_raw', key_out='ca_reg',
+                                n_jobs=31, filtSize=1, patchPerc=(60, ),
+                                patchOverlapPerc=(70, ), maxShiftPerc=(15, )):
     """
-    Registers image stack returned by apCode.behavior.headFixed.readPeriStimulusTifImages
-    Parameters
-    ----------
-    I: array, (K,T,C,M,N)
-        Trialized image stack returned by headFixed.readPeriStimulusTifImages.
-        K = # of trials
-        T = # of time points in each trial
-        C = # of image channels
-        M, N = image dimensions
-    iCh_ref: int
-        If C (# of image channels) > 1, then iCh_ref specifies the channel to use for computing
-        registration parameters (shifts), which are then applied to all other channels
-    nImgs_ref: int
-        Number of images to average from the beginning of the stack to generate the
-        reference image.
-    filtSigma: scalar
-        The standard deviation of the gaussian filter for filtering images prior to
-        registration. If filtSigma is None, then skips filtering. See skimage.filters.gaussian
-        for more info.
-    filtMode: string
-        See skimage.filters.gaussian for info
-    denoise: bool
-        If True, denoises images using skimage.restoration.denoise_wavelet before
-        filtering/registration. WARNING: Denoising will convert dtype of image to float
-        and also change the range of values
-    regMethod: string, 'st', 'cr', 'cpwr'
-        Specifies registration method
-        'st' (standard translation): Uses skimage.feature.register_translation with a fixed
-            reference image.
-        'cr' (caiman rigid): Uses rigid registration implemented in CaImAn. Uses dynamically updated
-            reference image.
-        'cpwr' (caiman piecewise rigid): Uses piecewise rigid registration implemented in caiman.
-
-    Returns
-    -------
-    I_reg: array, (K*T, C, M, N)
-        Registered image stack
-    regObj: object
-        Registration object
+    Piecewise rigid registration
+    See volt.Register for help
     """
-    print('Serializing and filtering images prior to registration...')
-    imgDims = I.shape
-    I = I.reshape(-1, *imgDims[2:])
-    if denoise:
-        print('Denoising prior to registration...')
-#        imgRange = I.max()-I.min()
-#        I = volt.denoiseImages(I/imgRange)
-        I = volt.denoiseImages(I)
-    else:
-        print('No denoising')
+    reg = volt.Register(n_jobs=n_jobs, regMethod='cpwr', filtSize=filtSize,
+                        patchPerc=patchPerc, patchOverlapPerc=patchOverlapPerc,
+                       maxShiftPerc=maxShiftPerc)
+    regObj = []
+    with h5py.File(hFilePath, mode='a') as hFile:
+        nSlices = hFile[key_in].shape[0]
+        for iSlc in range(nSlices):
+            print(f'z = {iSlc+1}/{nSlices}')
+            slc = np.array(hFile[key_in][iSlc])
+            slc = slc-slc.min()+1
+            ro = reg.fit(slc)
+            regObj.append(ro)
+            slc_reg = ro.apply_shifts_movie(ro.fname_)
+            if (iSlc==0) & (key_out in hFile):
+                del hFile[key_out]
+            hFile = hdf.createOrAppendToHdf(hFile, key_out, slc_reg[None, ...],
+                                            verbose=True)
+    return hFilePath, regObj
 
-    if filtSigma != None:
-        I_flt = volt.img.gaussFilt(I, sigma=filtSigma, mode=filtMode)
-    else:
-        I_flt = I.copy()
 
-    ref = I_flt[:nImgs_ref, iCh_ref, ...].mean(axis=0)
-
-    print('Computing registration parameters...')
-    try:
-        regObj = volt.Register(backend='joblib', regMethod=regMethod).fit(
-            I_flt[:, iCh_ref, ...], ref=ref)
-    except:
-        print('Parallel registration with joblib failed')
-        try:
-            print('Trying with "dask" backend instead of "joblib"...')
-            regObj = volt.Register(backend='dask', scheduler='processes',
-                                   regMethod=regMethod).fit(I_flt[:, iCh_ref, ...], ref=ref)
-        except:
-            print('Trying in serial mode...')
-            regObj = volt.Register(n_jobs=1, regMethod=regMethod).fit(
-                I_flt[:, iCh_ref, ...], ref=ref)
-
-    regObj.ref_ = ref
-    I_flt_reg = I_flt.copy()
-    I_reg = I.copy()
-    print('Applying registraton...')
-    for iCh in range(I_flt.shape[1]):
-        print('Channel # {}'.format(iCh))
-        I_flt_reg[:, iCh, ...] = regObj.transform(I_flt[:, iCh, ...])
-        I_reg[:, iCh, ...] = regObj.transform(I_reg[:, iCh, ...])
-    return I_reg, regObj
 
 
 def registerTrializedImgStack(I, iCh_ref=0, nImgs_ref=40, filtSigma=3, filtMode='wrap',
@@ -2199,13 +2541,13 @@ def registerTrializedImgStack(I, iCh_ref=0, nImgs_ref=40, filtSigma=3, filtMode=
     return I_reg, regObj
 
 
-def register_trialized_volumes_by_slices(images, filtSize=1, regMethod='cpwr',
-                                         **kwargs):
+def register_trialized_volumes_slice_by_slice(images, filtSize=1, regMethod='cpwr',
+                                              **kwargs):
     """
     Register image volumes slice-by-slice
     Parameters
     ----------
-    images: array, (nTrials, nTimePoints, nSlices, nRows, nCols)
+    images: array, (nTrials, nTimePoints, nSlices, imgHeight, imgWidth)
         Image hyperstack to perform registration on.
     filtSize: scalar
         Gaussian filter size (sigma) for smoothing of images prior to
@@ -3129,9 +3471,12 @@ def tailAngles_from_hdf_concatenated_by_trials(hFileDirs, hFileExt='h5',
     return dic
 
 
-def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', filtSize=2.5,
-                                     smooth=20, kind='cubic', n=50,
-                                     otsuMult=1, verbose=0):
+def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', flt_diam=11,
+                                     flt_sigmaSpace=1, smooth=20,
+                                     kind='cubic', n=50, prob_thr=0.5,
+                                     otsuMult=1, choose_region_by='largest',
+                                     verbose=False,
+                                     **unet_kwargs):
     """
     Given an array of images or the path to a directory of images (with
     single fish per image), segments the fish using a trained U net, and
@@ -3145,9 +3490,9 @@ def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', filtSize=2.5,
         Trained U net model for segmenting fish.
     imgExt: string
         Filters for images with this extension
-    filtSize: scalar
+    flt_diam, filt_sigmaSpace: ints
         Size of convolution kernel used to smooth images for detecting and
-        possibly coalescing fish blobs
+        possibly coalescing fish blobs. See fsb.fish_imgs_from_raw
     smooth: scalar
         Smoothing factor to apply to raw midlines extracting from image
         using "thinning" procedure
@@ -3180,9 +3525,10 @@ def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', filtSize=2.5,
     import os
     import numpy as np
     import apCode.behavior.FreeSwimBehavior as fsb
+    from apCode.SignalProcessingTools import interp
 #        import apCode.volTools as volt
-    from apCode import geom
-    from dask import delayed, compute
+    # from apCode import geom
+    # from dask import delayed, compute
 
     if isinstance(images, str):
         if os.path.exists(images):
@@ -3195,41 +3541,27 @@ def tailAnglesFromRawImagesUsingUnet(images, uNet, imgExt='bmp', filtSize=2.5,
 
     if verbose:
         print('Predicting on images...')
-    uShape = uNet.input_shape[1:3]
-    images_prob = np.squeeze(uNet.predict(fsb.prepareForUnet_1ch(images,
-                                                                 sz=uShape)))
-    images_prob = volt.img.resize(images_prob, images.shape[1:],
-                                  preserve_dtype=True,
-                                  preserve_range=True)
-
-    if verbose:
-        print('Processing images for midline detection...')
-    images_fish = fishImgsForMidline(images_prob, filtSize=filtSize,
-                                     otsuMult=otsuMult)
+    images_fish, images_prob = fsb.fish_imgs_from_raw(images, uNet,
+                                                      diam=flt_diam,
+                                                      bgd=None, prob_thr=prob_thr,
+                                                      sigma_space=flt_sigmaSpace,
+                                                      choose_region_by=choose_region_by,
+                                                      **unet_kwargs)
 
     if verbose:
         print('Computing midlines...')
-    midlines = midlinesFromImages(images_fish)[0]
-
-    if verbose:
-        print('Interpolating midlines to sample uniformly to the same' +
-              ' length...')
-    print('2D interpolation...')
-    midlines_interp = geom.interpolateCurvesND(midlines, mode='2D', N=50)
-    print('Curve smoothening...')
-    midlines_interp = np.asarray(compute(
-        *[delayed(geom.smoothen_curve)(_, smooth=smooth) for _ in
-          midlines_interp], scheduler='processes'))
-    print('Length equalization')
-    midlines_interp = geom.equalizeCurveLens(midlines_interp)
-
+    midlines, inds_kept = fsb.track.midlines_from_binary_imgs(images_fish,
+                                                              n_pts=n)
     if verbose:
         print('Computing curvatures...')
-    kappas = fsb.track.curvaturesAlongMidline(midlines_interp, n=n)
-    tailAngles = np.cumsum(kappas, axis=0)
-    midlines = dict(raw=midlines, interp=midlines_interp)
-    out = dict(midlines=midlines, I_fish=images_fish, I_prob=images_prob,
-               tailAngles=tailAngles)
+    kappas = fsb.track.curvaturesAlongMidline(midlines, n=n)
+    ta = np.cumsum(kappas, axis=0)
+    ta_interp = np.ones((ta.shape[0], images_fish.shape[0]))*np.nan
+    ta_interp[:, inds_kept] = ta
+    ta_interp = interp.nanInterp2d(ta_interp, method='nearest')
+    out = dict(midlines=midlines, images_fish=images_fish,
+               images_prob=images_prob, tailAngles=ta_interp,
+               inds_kept_midlines=inds_kept)
     return out
 
 
