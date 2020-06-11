@@ -7,8 +7,7 @@ Created on Tue Aug 04 14:06:13 2015
 import numpy as np
 import scipy as sp
 import sys
-sys.path.append(r'\\dm11\koyamalab\code\python\code')
-
+# sys.path.append(r'\\dm11\koyamalab\code\python\code') # noqa
 
 class AlignTimeseries(object):
     """
@@ -1290,10 +1289,8 @@ def standardize(x, axis=None):
     preserveSign = If True, will preserve sign of values, such that zero value is fulcrum.
         In other words, separately standardizes the negative and positive values
     """
-    import numpy as np
-
-    def func(x): return (x-np.min(x))/(np.max(x)-np.min(x))
-    if axis == None:
+    def func(y): return (y-np.min(y))/(np.max(y)-np.min(y))
+    if axis is None:
         out = func(x)
     else:
         out = np.apply_along_axis(func, axis, x)
